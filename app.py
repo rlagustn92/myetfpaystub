@@ -185,6 +185,13 @@ def render_home() -> None:
         kcard(F.won(year.amount_krw), f"{today.year}년에 지금까지 받은 ETF 월급",
               f"세금 계산 기준 {F.won(year.tax_basis_krw)} · "
               f"세금에 안 잡힌 금액 {F.won(year.non_taxed_krw)}")
+        st.write("")
+        ny, nm = (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
+        nxt = CF.month_total(portfolio, dists, ny, nm, latest_rate=summary.usdkrw)
+        kcard(F.won(nxt.amount_krw) if nxt.rows else config.NO_DATA_TEXT,
+              f"{nm}월에 들어올 것으로 보이는 돈",
+              "🟡 예상값입니다. 실제 발표 금액과 다를 수 있습니다." if nxt.has_estimate
+              else ("확정된 지급만 있습니다" if nxt.rows else "아직 알 수 있는 게 없습니다"))
 
     if this_month.tax_basis_is_partial or year.tax_basis_is_partial:
         note("※ '세금 계산에 잡히는 금액' 은 운용사가 발표한 자료가 있는 건만 더한 값입니다. "
@@ -211,13 +218,22 @@ def render_home() -> None:
     st.write("")
 
     # -- 증권사별 --------------------------------------------------------
-    section("내 돈은 어디에 있나요?")
+    section("내 돈은 어디에 있나요?", "증권사를 누르면 계좌별로 쪼개서 볼 수 있습니다.")
     for g in PS.group_by_broker(summary):
-        accounts = " · ".join(f"{a} {F.won_short(v)}" for a, v in
-                              sorted(g.accounts.items(), key=lambda x: -x[1]))
-        listrow(g.broker, accounts or "계좌 정보 없음", F.won(g.value_krw),
-                f"전체의 {g.value_krw / summary.total_value_krw * 100:.0f}%"
-                if summary.total_value_krw > 0 else "")
+        share = (f" · 전체의 {g.value_krw / summary.total_value_krw * 100:.0f}%"
+                 if summary.total_value_krw > 0 else "")
+        with st.expander(f"**{g.broker}**　{F.won(g.value_krw)}{share}"):
+            for account, value in sorted(g.accounts.items(), key=lambda x: -x[1]):
+                st.markdown(f"**{account}** — {F.won(value)}")
+                for r in g.rows:
+                    if (r.holding.account or "계좌 미지정") != account:
+                        continue
+                    listrow(r.holding.name or r.holding.ticker,
+                            f"{F.shares(r.holding.shares)} · 평균 "
+                            f"{F.native_amt(r.holding.avg_price, r.holding.currency)}",
+                            F.won(r.value_krw(summary.usdkrw)),
+                            F.won_signed(r.profit_krw(summary.usdkrw))
+                            if r.profit_krw(summary.usdkrw) is not None else "")
 
     st.write("")
 
