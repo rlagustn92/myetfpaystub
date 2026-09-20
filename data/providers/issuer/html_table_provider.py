@@ -59,6 +59,29 @@ def _find_distribution_table(page_html: str) -> list[list[str]] | None:
     return None
 
 
+def _column_map(header: list[str]) -> dict[str, int] | None:
+    """머리글 이름 -> 열 번호.
+
+    ⚠ **열 위치를 숫자로 박아두면 안 됩니다.** 운용사마다 순서가 다르고
+    (PLUS 는 과세표준이 4번째, 다른 곳은 5번째), 저쪽이 열을 하나 끼워 넣으면
+    **에러 없이 분배율을 과세표준으로 읽게 됩니다.** 그래서 이름으로 찾습니다.
+    """
+    idx: dict[str, int] = {}
+    for i, raw in enumerate(header):
+        h = raw.replace(" ", "")
+        if "과세표준" in h:
+            idx["tax_basis"] = i
+        elif "기준일" in h:
+            idx["record_date"] = i
+        elif "지급일" in h:
+            idx["payment_date"] = i
+        elif "분배금" in h or "분배금액" in h:
+            idx.setdefault("amount", i)
+    if {"record_date", "payment_date", "amount", "tax_basis"} <= set(idx):
+        return idx
+    return None
+
+
 class HtmlTableIssuerProvider(IssuerDistributionProvider):
     """상세 페이지 HTML 표에서 분배 이력을 읽는 provider."""
 
@@ -83,13 +106,21 @@ class HtmlTableIssuerProvider(IssuerDistributionProvider):
                 raise DataUnavailable(
                     f"[{code}] {self.brand} 상세 페이지에서 분배금 표를 찾지 못했습니다."
                 )
+            cols = _column_map(rows[0])
+            if cols is None:
+                # 머리글을 못 읽으면 **추측해서 읽지 않습니다.** 잘못 읽은 숫자는
+                # 에러 없이 화면에 그대로 나가기 때문에 못 읽는 편이 낫습니다.
+                raise DataUnavailable(
+                    f"[{code}] {self.brand} 분배금 표의 항목 이름이 예상과 달라 읽지 못했습니다."
+                )
+            need = max(cols.values())
             items: list[Distribution] = []
             for r in rows[1:]:
-                if len(r) < 4:
+                if len(r) <= need:
                     continue
-                record = parse_date(r[0])
-                pay = parse_date(r[1]) or record
-                amount = parse_amount(r[2])
+                record = parse_date(r[cols["record_date"]])
+                pay = parse_date(r[cols["payment_date"]]) or record
+                amount = parse_amount(r[cols["amount"]])
                 if pay is None or amount is None:
                     continue
                 items.append(Distribution(
@@ -97,7 +128,7 @@ class HtmlTableIssuerProvider(IssuerDistributionProvider):
                     payment_date=pay,
                     record_date=record,
                     distribution_per_share=amount,
-                    tax_basis_per_share=parse_amount(r[3]),
+                    tax_basis_per_share=parse_amount(r[cols["tax_basis"]]),
                     currency="KRW",
                     source=self.brand,
                     source_url=url,

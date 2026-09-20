@@ -307,3 +307,34 @@ class _Resp:
         if self._payload is None:
             raise ValueError("not json")
         return self._payload
+
+
+# --------------------------------------------------- 열 순서가 바뀌어도 (회귀 방지)
+REORDERED_HTML = """
+<table>
+ <tr><th>분배금 지급 기준일</th><th>분배금 지급일</th><th>주당분배금</th>
+     <th>분배율(%)</th><th>주당과세표준액</th></tr>
+ <tr><td>2026.08.31</td><td>2026.09.02</td><td>103</td><td>1.55%</td><td>7</td></tr>
+</table>
+"""
+
+
+def test_columns_are_found_by_header_name_not_position(monkeypatch):
+    """⚠ 열 위치를 숫자로 박아두면, 운용사가 열을 하나 끼워 넣는 순간
+    **에러 없이 분배율을 과세표준으로 읽습니다.** 그래서 이름으로 찾습니다."""
+    monkeypatch.setattr(issuer_index, "fund_id_of", lambda c, b: "X")
+    monkeypatch.setattr("data.providers.issuer.html_table_provider.http_get",
+                        lambda *a, **k: _Resp(text=REORDERED_HTML))
+    d = PlusProvider().fetch("161510").latest()
+    assert d.distribution_per_share == 103.0
+    assert d.tax_basis_per_share == 7.0        # 1.55(분배율)를 읽으면 실패합니다
+
+
+def test_unreadable_header_refuses_instead_of_guessing(monkeypatch):
+    weird = ("<table><tr><th>가</th><th>나</th><th>다</th><th>주당과세표준액</th></tr>"
+             "<tr><td>1</td><td>2</td><td>3</td><td>4</td></tr></table>")
+    monkeypatch.setattr(issuer_index, "fund_id_of", lambda c, b: "X")
+    monkeypatch.setattr("data.providers.issuer.html_table_provider.http_get",
+                        lambda *a, **k: _Resp(text=weird))
+    with pytest.raises(DataUnavailable):
+        PlusProvider().fetch("161510")

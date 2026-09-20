@@ -92,6 +92,9 @@ streamlit run app.py         # 로컬 실행
   `StreamlitWidgetAlreadyInstantiatedError`, 쓰기를 위로 올리면 이번에 고친 내용이 안 남습니다.
 - **방문자 카운터는 세션당 한 번만 부릅니다.** 안 그러면 클릭할 때마다 +1 입니다.
   `st.session_state["visitor_counts"]` 가 막고 있습니다.
+- **KIWOOM(키움)은 과세표준을 공개하지만 붙이지 못했습니다.** 그 서버가 TLS 중간
+  인증서를 안 보내서 파이썬에서 검증이 실패합니다. `verify=False` 로 끄지 마세요.
+  자세한 건 docs/DATA_SOURCES.md §2-8.
 - **날짜는 전부 `config.today_local()`** 을 씁니다. 서버가 UTC 라 `date.today()` 를 쓰면
   한국 시간 오전 9시에 날짜가 바뀝니다.
 
