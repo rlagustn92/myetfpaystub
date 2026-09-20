@@ -178,6 +178,8 @@ tests/                     pytest
 
 ## 배포 (Streamlit Community Cloud)
 
+한 줄씩 지워 나가는 체크리스트는 **[DEPLOY.md](DEPLOY.md)** 에 있습니다.
+
 1. 이 폴더를 GitHub 저장소로 push
 2. share.streamlit.io 에서 저장소 연결, main 파일 `app.py`
 3. 앱 URL 을 `MYETFPAYSTUB` 으로 지정

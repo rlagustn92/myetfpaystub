@@ -227,7 +227,8 @@ python -m pytest -m network  # 실제 운용사/시세 호출 — 배포 전에 
 ```
 
 구조와 함정은 **[CLAUDE.md](CLAUDE.md)**, 데이터 소스 검증 기록은
-**[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)** 를 보세요.
+**[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)**, 배포 절차는
+**[DEPLOY.md](DEPLOY.md)** 를 보세요.
 
 운용사 매핑 시드를 다시 만들려면 (개발자 PC 에서만):
 
