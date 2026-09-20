@@ -144,6 +144,7 @@ class PitchPayload:
     captain_key: str | None
     total_value_krw: float
     unpriced: list[str]          # 가격을 못 가져와 비중을 못 매긴 종목
+    no_slot: list[str]           # 자리가 모자라 판에 못 세운 종목 (26자리 초과)
 
 
 def build_players(summary: PortfolioSummary, portfolio: Portfolio,
@@ -157,6 +158,7 @@ def build_players(summary: PortfolioSummary, portfolio: Portfolio,
     total = summary.total_value_krw
     players: list[dict] = []
     unpriced: list[str] = []
+    no_slot: list[str] = []
     captain_key: str | None = None
     best = -1.0
 
@@ -171,6 +173,12 @@ def build_players(summary: PortfolioSummary, portfolio: Portfolio,
             if value > best:
                 best, captain_key = value, key
 
+        slot = portfolio.slots.get(key)
+        if not pitch_grid.is_slot(slot):
+            # 자리가 26개뿐이라 그보다 많이 들고 있으면 못 세웁니다.
+            # 조용히 가운데 겹쳐 두면 "왜 카드가 사라졌지" 가 되므로 알려 줍니다.
+            no_slot.append(g.name or g.ticker)
+
         players.append({
             "id": key,
             "ticker": g.ticker,
@@ -179,7 +187,7 @@ def build_players(summary: PortfolioSummary, portfolio: Portfolio,
             "label": pitch_kit.card_label(g.market, g.ticker, g.name),
             "kit": pitch_kit.kit_of(g.market, g.name),
             "weight_pct": weight,
-            "slot": portfolio.slots.get(key),
+            "slot": slot,
             # 가격을 못 가져온 종목은 카드에 경고 표시를 답니다.
             "has_warning": value is None,
             "captain": False,
@@ -189,7 +197,7 @@ def build_players(summary: PortfolioSummary, portfolio: Portfolio,
         p["captain"] = (p["id"] == captain_key)
 
     return PitchPayload(players=players, captain_key=captain_key,
-                        total_value_krw=total, unpriced=unpriced)
+                        total_value_krw=total, unpriced=unpriced, no_slot=no_slot)
 
 
 def share_rows(summary: PortfolioSummary, groups: list[TickerGroup],

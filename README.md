@@ -222,8 +222,8 @@ streamlit run app.py
 ## 12. 개발 / 테스트
 
 ```bash
-python -m pytest -q          # 네트워크 없이 도는 단위 테스트 (148개)
-python -m pytest -m network  # 실제 운용사/시세 호출 (15개) — 배포 전에 한 번씩
+python -m pytest -q          # 네트워크 없이 도는 단위 테스트
+python -m pytest -m network  # 실제 운용사/시세 호출 — 배포 전에 한 번씩
 ```
 
 구조와 함정은 **[CLAUDE.md](CLAUDE.md)**, 데이터 소스 검증 기록은

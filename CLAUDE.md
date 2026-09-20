@@ -61,8 +61,8 @@
 ## 실행과 테스트
 
 ```bash
-python -m pytest -q          # 전체 (네트워크 테스트는 자동 제외, 148개)
-python -m pytest -m network  # 실제 운용사/시세 호출 (15개, 20초쯤)
+python -m pytest -q          # 전체 (네트워크 테스트는 자동 제외)
+python -m pytest -m network  # 실제 운용사/시세 호출 (20초쯤)
 streamlit run app.py         # 로컬 실행
 ```
 

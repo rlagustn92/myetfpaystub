@@ -221,3 +221,19 @@ def test_comment_text_has_no_broker_or_account_names():
 def test_ticker_key_is_stable():
     assert ticker_key("kr", "069500") == "KR:069500"
     assert ticker_key("US", "schd") == "US:SCHD"
+
+
+def test_more_tickers_than_slots_is_reported_not_silently_piled_up():
+    """자리는 26개뿐입니다. 넘치는 종목을 조용히 가운데 겹쳐 두면
+    '왜 카드가 사라졌지' 가 됩니다."""
+    n = len(pitch_grid.all_slots()) + 3
+    p = Portfolio()
+    codes = [f"{i:06d}" for i in range(n)]
+    for c in codes:
+        p.add(kr(ticker=c, name=f"KODEX 배당{c}", shares=1, avg=1))
+    s = PS.summarize(p, quotes={("KR", c): q(c, 1000, "KRW") for c in codes}, usdkrw=FX)
+    groups = PS.group_by_ticker(s)
+    pitch_service.ensure_slots(p, groups)
+    payload = pitch_service.build_players(s, p, groups)
+    assert len(p.slots) == len(pitch_grid.all_slots())
+    assert len(payload.no_slot) == 3

@@ -335,6 +335,10 @@ def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None
     if payload.unpriced:
         note(f"※ {', '.join(payload.unpriced)} 은(는) 지금 가격을 확인하지 못해 "
              f"등번호를 비워 두었습니다. 0% 라는 뜻이 아닙니다.")
+    if payload.no_slot:
+        warn(f"전술판 자리는 {len(pitch_grid.all_slots())}개뿐이라 "
+             f"{', '.join(payload.no_slot)} 은(는) 판에 세우지 못했습니다. "
+             f"위 '내 ETF' 목록에는 그대로 다 있습니다.")
 
 
 # =====================================================================
