@@ -1,0 +1,218 @@
+"""
+services/cashflow_service.py  --  "이번 달 ETF 월급이 얼마인가"
+================================================================
+
+분배 이력 + 내 보유수량을 곱해서 **실제 내 금액**으로 바꾸는 곳입니다.
+메인 화면의 큰 카드, 월별 급여명세서, 분배금 달력이 전부 여기서 나옵니다.
+
+원화 환산 규칙
+--------------
+- **과거에 받은 것**은 그날의 환율로 환산합니다.
+- **앞으로 받을 것**은 지금 환율로 환산합니다 (미래 환율은 아무도 모릅니다).
+
+과세표준 합계의 규칙 — 여기가 제일 조심스러운 부분입니다
+--------------------------------------------------------
+과세표준을 모르는 건(`None`)은 **합계에 0으로 넣지 않습니다.** 대신
+"몇 건은 자료가 없어서 빠졌다" 를 같이 들고 다니면서 화면에 적습니다.
+0으로 세면 "세금 계산에 잡히는 금액이 적다" 고 오해하게 됩니다.
+"""
+
+from __future__ import annotations
+
+from calendar import monthrange
+from dataclasses import dataclass, field
+from datetime import date
+
+import config
+from models.distribution import Distribution
+from models.portfolio import Holding, Portfolio
+from services import fx_service
+from services.distribution_service import TickerDistributions, upcoming
+
+
+@dataclass
+class PayslipRow:
+    """급여명세서 한 줄 = (지급 1건 × 계좌 1개)."""
+
+    payment_date: date
+    holding: Holding
+    dist: Distribution
+    amount_krw: float | None = None
+    tax_basis_krw: float | None = None
+    fx_rate: float | None = None
+
+    @property
+    def ticker(self) -> str:
+        return self.holding.ticker
+
+    @property
+    def name(self) -> str:
+        return self.holding.name or self.holding.ticker
+
+    @property
+    def is_estimated(self) -> bool:
+        return self.dist.status == config.STATUS_ESTIMATED
+
+    @property
+    def has_tax_basis(self) -> bool:
+        return self.tax_basis_krw is not None
+
+    def badge(self) -> str:
+        return config.STATUS_BADGE.get(self.dist.status, "")
+
+
+@dataclass
+class PeriodTotal:
+    """어떤 기간(이번 달 / 올해)의 합계."""
+
+    label: str = ""
+    amount_krw: float = 0.0
+    tax_basis_krw: float = 0.0
+    rows: list[PayslipRow] = field(default_factory=list)
+    unknown_tax_basis_rows: int = 0     # 과세표준을 모르는 줄 수
+    estimated_rows: int = 0             # 예상값이 섞인 줄 수
+    skipped_rows: int = 0               # 환율을 몰라 금액 자체를 못 낸 줄 수
+
+    @property
+    def has_estimate(self) -> bool:
+        return self.estimated_rows > 0
+
+    @property
+    def status(self) -> str:
+        return config.STATUS_ESTIMATED if self.has_estimate else config.STATUS_CONFIRMED
+
+    @property
+    def non_taxed_krw(self) -> float:
+        """세금 계산에 안 잡히는 금액. 과세표준을 아는 줄만 가지고 계산합니다."""
+        known = sum(r.amount_krw or 0.0 for r in self.rows if r.has_tax_basis)
+        return max(0.0, known - self.tax_basis_krw)
+
+    @property
+    def tax_basis_is_partial(self) -> bool:
+        return self.unknown_tax_basis_rows > 0
+
+
+# ---------------------------------------------------------------------
+def _fx_for(dist: Distribution, today: date, latest_rate: float | None) -> float | None:
+    """그 지급 건에 쓸 환율. 원화 종목이면 필요 없습니다."""
+    if dist.currency.upper() == "KRW":
+        return None
+    if dist.payment_date > today:
+        return latest_rate           # 미래 = 지금 환율 (미래 환율은 모릅니다)
+    q = fx_service.on(dist.payment_date)
+    return q.rate if q else latest_rate
+
+
+def build_rows(portfolio: Portfolio,
+               dists: dict[tuple[str, str], TickerDistributions],
+               start: date, end: date,
+               include_estimates: bool = True,
+               today: date | None = None,
+               latest_rate: float | None = None) -> list[PayslipRow]:
+    """[start, end] 구간의 급여명세서 줄들.
+
+    한 종목을 세 계좌에 나눠 가지고 있으면 줄이 세 개 생깁니다(§15).
+    """
+    today = today or config.today_local()
+    if latest_rate is None:
+        q = fx_service.latest()
+        latest_rate = q.rate if q else None
+
+    rows: list[PayslipRow] = []
+    for h in portfolio.holdings:
+        if h.shares <= 0:
+            continue
+        td = dists.get((h.market, h.ticker))
+        if td is None or not td.ok:
+            continue
+
+        events: list[Distribution] = td.series.in_range(start, end)
+        if include_estimates:
+            for e in upcoming(td, today):
+                if e.status == config.STATUS_ESTIMATED and start <= e.payment_date <= end:
+                    events.append(e)
+
+        for d in events:
+            rate = _fx_for(d, today, latest_rate)
+            amount = fx_service.to_krw(d.amount_for(h.shares), d.currency, rate)
+            tb_native = d.tax_basis_for(h.shares)
+            tb = (fx_service.to_krw(tb_native, d.currency, rate)
+                  if tb_native is not None else None)
+            rows.append(PayslipRow(payment_date=d.payment_date, holding=h, dist=d,
+                                   amount_krw=amount, tax_basis_krw=tb, fx_rate=rate))
+    rows.sort(key=lambda r: (r.payment_date, r.name))
+    return rows
+
+
+def total_of(rows: list[PayslipRow], label: str = "") -> PeriodTotal:
+    """줄들을 합칩니다. 모르는 값은 0으로 세지 않고 따로 셉니다."""
+    t = PeriodTotal(label=label, rows=rows)
+    for r in rows:
+        if r.amount_krw is None:
+            t.skipped_rows += 1
+            continue
+        t.amount_krw += r.amount_krw
+        if r.tax_basis_krw is None:
+            t.unknown_tax_basis_rows += 1
+        else:
+            t.tax_basis_krw += r.tax_basis_krw
+        if r.is_estimated:
+            t.estimated_rows += 1
+    return t
+
+
+def month_range(year: int, month: int) -> tuple[date, date]:
+    last = monthrange(year, month)[1]
+    return date(year, month, 1), date(year, month, last)
+
+
+def month_total(portfolio: Portfolio, dists: dict, year: int, month: int,
+                **kw) -> PeriodTotal:
+    start, end = month_range(year, month)
+    rows = build_rows(portfolio, dists, start, end, **kw)
+    return total_of(rows, label=f"{year}년 {month}월")
+
+
+def year_total(portfolio: Portfolio, dists: dict, year: int,
+               include_estimates: bool = False, **kw) -> PeriodTotal:
+    """올해 누적. 기본은 **확인된 것만** 셉니다.
+
+    "올해 지금까지 받은 돈" 에 예상값을 섞으면 그건 받은 돈이 아닙니다.
+    """
+    rows = build_rows(portfolio, dists, date(year, 1, 1), date(year, 12, 31),
+                      include_estimates=include_estimates, **kw)
+    return total_of(rows, label=f"{year}년")
+
+
+# ---------------------------------------------------------------------
+# 달력
+# ---------------------------------------------------------------------
+@dataclass
+class CalendarDay:
+    day: date
+    amount_krw: float = 0.0
+    rows: list[PayslipRow] = field(default_factory=list)
+
+    @property
+    def has_estimate(self) -> bool:
+        return any(r.is_estimated for r in self.rows)
+
+
+def calendar_of(rows: list[PayslipRow]) -> dict[date, CalendarDay]:
+    """날짜별로 묶습니다. 달력 화면에서 씁니다."""
+    out: dict[date, CalendarDay] = {}
+    for r in rows:
+        c = out.setdefault(r.payment_date, CalendarDay(day=r.payment_date))
+        c.rows.append(r)
+        if r.amount_krw is not None:
+            c.amount_krw += r.amount_krw
+    return out
+
+
+def monthly_series(portfolio: Portfolio, dists: dict, year: int,
+                   **kw) -> list[tuple[int, PeriodTotal]]:
+    """1~12월 각 달의 합계. 월별 막대/표에 씁니다."""
+    out: list[tuple[int, PeriodTotal]] = []
+    for m in range(1, 13):
+        out.append((m, month_total(portfolio, dists, year, m, **kw)))
+    return out

@@ -1,0 +1,713 @@
+"""
+app.py  --  MY ETF 급여명세서 (화면)
+=====================================
+
+계산은 전부 services/ 에 있습니다. 이 파일은 **보여주는 일만** 합니다.
+
+화면을 열었을 때 5초 안에 이 두 가지를 알 수 있어야 합니다.
+    1. 내 ETF 가 지금 얼마인가
+    2. 이번 달에 얼마가 들어오는가
+
+⚠ Streamlit 에서 `app.py` 만 핫리로드됩니다. services/ · config.py · models/ 를
+고쳤으면 서버를 다시 켜야 합니다. 이걸 모르면 "왜 안 바뀌지?" 로 시간을 날립니다.
+"""
+
+from __future__ import annotations
+
+import warnings
+from calendar import monthrange
+from datetime import date
+
+warnings.filterwarnings("ignore")   # yfinance/pandas 의 FutureWarning 이 화면에 뜨지 않게
+
+import pandas as pd
+import streamlit as st
+
+import config
+import formatting as F
+from components.local_store import local_store
+from components.ui import (
+    header,
+    inject_css,
+    kcard,
+    listrow,
+    note,
+    paycard,
+    section,
+    warn,
+)
+from data.providers import cache
+from models.portfolio import MARKET_KR, MARKET_US, Holding
+from services import (
+    cashflow_service as CF,
+    distribution_service as DS,
+    fx_service,
+    naver_link_service,
+    portfolio_service as PS,
+    search_service,
+    storage_service as STORE,
+    visitor_service,
+)
+
+st.set_page_config(page_title=config.PAGE_TITLE, page_icon=config.APP_ICON,
+                   layout="wide", initial_sidebar_state="collapsed")
+inject_css()
+
+
+# =====================================================================
+# 1. 브라우저 저장소에서 복원  — ⚠ 위젯을 하나라도 만들기 전에 해야 합니다
+# =====================================================================
+_restored = local_store(mode="read", key="ls_read")
+
+if "store" not in st.session_state:
+    st.session_state["store"] = STORE.new_store()
+    st.session_state["storage_writable"] = True
+    st.session_state["restored"] = False
+
+if (not st.session_state["restored"]) and isinstance(_restored, dict) \
+        and _restored.get("mode") == "read":
+    st.session_state["restored"] = True
+    st.session_state["storage_writable"] = bool(_restored.get("writable", True))
+    text = _restored.get("data")
+    if text:
+        loaded, err = STORE.loads(text)
+        if loaded is not None:
+            st.session_state["store"] = loaded
+        else:
+            st.session_state["restore_error"] = err
+
+store: STORE.Store = st.session_state["store"]
+portfolio = store.active()
+
+
+# =====================================================================
+# 2. 방문자 수 — ⚠ 세션당 한 번만 (안 그러면 클릭할 때마다 +1)
+# =====================================================================
+if "visitor_counts" not in st.session_state:
+    st.session_state["visitor_counts"] = visitor_service.count_visit()
+
+header(st.session_state["visitor_counts"])
+
+if st.session_state.get("restore_error"):
+    warn(f"저장해 둔 내용을 불러오지 못했습니다 — {st.session_state.pop('restore_error')}")
+
+
+# =====================================================================
+# 3. 데이터 준비
+# =====================================================================
+def load_market_data():
+    """현재가 · 환율 · 분배금. 전부 TTL 캐시를 타므로 매 렌더마다 네트워크를 타지 않습니다."""
+    quotes = PS.fetch_quotes(portfolio)
+    fx = fx_service.latest()
+    summary = PS.summarize(portfolio, quotes=quotes, usdkrw=fx.rate if fx else None)
+    dists = DS.fetch_all(portfolio)
+    return summary, dists, fx
+
+
+has_holdings = bool(portfolio.holdings)
+summary = dists = fx = None
+if has_holdings:
+    with st.spinner("가격과 분배금을 확인하고 있습니다…"):
+        summary, dists, fx = load_market_data()
+
+today = config.today_local()
+
+
+# =====================================================================
+# 4. 빈 화면 — 처음 온 사람에게 다음에 뭘 눌러야 하는지 말해 줍니다
+# =====================================================================
+def render_empty() -> None:
+    st.markdown("### 아직 등록된 ETF 가 없습니다")
+    note("증권사에 흩어져 있는 ETF 를 하나씩 등록하면, 전부 합쳐서 "
+         "지금 얼마이고 매달 얼마가 들어오는지 보여드립니다.")
+    st.write("")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**① 아래 `➕ 내 ETF 추가` 에서 등록하기**")
+        note("증권사 · 계좌 · 종목 · 수량 · 평균 매입가격, 다섯 가지만 넣으면 됩니다.")
+    with c2:
+        st.markdown("**② 어떤 화면인지 먼저 보고 싶다면**")
+        if st.button("예시로 시작해보기", type="secondary", use_container_width=True):
+            for t, mk, nm, br, ac, sh, ap in [
+                ("069500", MARKET_KR, "KODEX 200", "미래에셋증권", "ISA", 100, 32000),
+                ("498400", MARKET_KR, "KODEX 200타겟위클리커버드콜", "키움증권", "일반", 500, 20000),
+                ("402970", MARKET_KR, "ACE 미국배당다우존스", "미래에셋증권", "연금저축", 300, 11000),
+                ("SCHD", MARKET_US, "Schwab US Dividend Equity ETF", "키움증권", "일반", 180, 30.5),
+            ]:
+                portfolio.add(Holding(ticker=t, market=mk, name=nm, broker=br,
+                                      account=ac, account_type=ac, shares=sh, avg_price=ap))
+            st.rerun()
+
+
+# =====================================================================
+# 5. 홈
+# =====================================================================
+def render_home() -> None:
+    # -- 맨 위 세 숫자 --------------------------------------------------
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        kcard(F.won(summary.total_value_krw), "지금 내 ETF 자산",
+              f"{len(portfolio.holdings)}개 계좌 · {len(portfolio.tickers())}개 종목")
+    with c2:
+        kcard(F.won(summary.total_cost_krw), "내가 넣은 돈",
+              "입력한 평균 매입가격 기준")
+    with c3:
+        profit = summary.total_profit_krw
+        kcard(F.won_signed(profit), "지금까지 벌거나 잃은 돈",
+              F.pct_signed(summary.profit_rate) if summary.profit_rate is not None else "",
+              tone="up" if profit > 0 else ("down" if profit < 0 else ""))
+
+    if summary.has_missing:
+        names = ", ".join(sorted({m.holding.name or m.holding.ticker
+                                  for m in summary.missing}))
+        warn(f"{names} 은(는) 지금 가격을 확인하지 못해 위 합계에서 빠졌습니다. "
+             f"0원으로 세지 않았습니다. 잠시 뒤 '🔄 정보 업데이트' 를 눌러 보세요.")
+
+    st.write("")
+
+    # -- 이번 달 ETF 월급 ------------------------------------------------
+    this_month = CF.month_total(portfolio, dists, today.year, today.month,
+                                latest_rate=summary.usdkrw)
+    left, right = st.columns([3, 2])
+    with left:
+        subs = [("세금 계산에 잡히는 금액", F.won(this_month.tax_basis_krw))]
+        if this_month.tax_basis_is_partial:
+            subs.append(("자료가 없는 건", f"{this_month.unknown_tax_basis_rows}건"))
+        paycard(
+            F.won(this_month.amount_krw),
+            f"💰 {today.year}년 {today.month}월 ETF 월급",
+            "이번 달에 들어오는(들어온) 분배금 합계"
+            + (" · 일부는 예상값입니다" if this_month.has_estimate else ""),
+            subs,
+        )
+    with right:
+        year = CF.year_total(portfolio, dists, today.year, latest_rate=summary.usdkrw)
+        kcard(F.won(year.amount_krw), f"{today.year}년에 지금까지 받은 ETF 월급",
+              f"세금 계산 기준 {F.won(year.tax_basis_krw)} · "
+              f"세금에 안 잡힌 금액 {F.won(year.non_taxed_krw)}")
+
+    if this_month.tax_basis_is_partial or year.tax_basis_is_partial:
+        note("※ '세금 계산에 잡히는 금액' 은 운용사가 발표한 자료가 있는 건만 더한 값입니다. "
+             "아직 발표 전이거나 자료를 확인할 수 없는 건은 0원으로 세지 않고 빼두었습니다.")
+
+    st.write("")
+
+    # -- 이번 달 지급 내역 -----------------------------------------------
+    section(f"{today.month}월 지급 내역",
+            "날짜 · 종목 · 어느 증권사로 들어오는지" if this_month.rows else "")
+    if not this_month.rows:
+        note("이번 달에는 예정된 분배금이 없습니다. (자료가 없는 종목은 여기에 안 나옵니다)")
+    else:
+        for r in this_month.rows:
+            listrow(
+                f"{F.md(r.payment_date)}  {r.name}",
+                f"{r.holding.where()} · {F.shares(r.holding.shares)}",
+                F.won(r.amount_krw),
+                f"세금 기준 {F.won(r.tax_basis_krw)}" if r.has_tax_basis
+                else "세금 기준 자료 없음",
+                chip="예상" if r.is_estimated else "",
+            )
+
+    st.write("")
+
+    # -- 증권사별 --------------------------------------------------------
+    section("내 돈은 어디에 있나요?")
+    for g in PS.group_by_broker(summary):
+        accounts = " · ".join(f"{a} {F.won_short(v)}" for a, v in
+                              sorted(g.accounts.items(), key=lambda x: -x[1]))
+        listrow(g.broker, accounts or "계좌 정보 없음", F.won(g.value_krw),
+                f"전체의 {g.value_krw / summary.total_value_krw * 100:.0f}%"
+                if summary.total_value_krw > 0 else "")
+
+    st.write("")
+
+    # -- 내 ETF 목록 -----------------------------------------------------
+    section("내 ETF")
+    for g in PS.group_by_ticker(summary):
+        v = g.value_krw(summary.usdkrw)
+        c = g.cost_krw(summary.usdkrw)
+        profit = (v - c) if (v is not None and c is not None) else None
+        places = len({r.holding.where() for r in g.rows})
+        listrow(
+            g.name,
+            f"{F.shares(g.total_shares)} · 평균 {F.native_amt(g.avg_price, g.currency)}"
+            + (f" · {places}개 계좌에 나눠 보유" if places > 1 else ""),
+            F.won(v) if v is not None else config.NO_DATA_TEXT,
+            F.won_signed(profit) if profit is not None else "",
+        )
+
+
+# =====================================================================
+# 6. 월별 급여명세서 + 달력
+# =====================================================================
+def render_payslip() -> None:
+    c1, c2 = st.columns([1, 3])
+    with c1:
+        year = st.number_input("연도", min_value=2000, max_value=2100,
+                               value=today.year, step=1, key="ps_year")
+        month = st.selectbox("월", list(range(1, 13)), index=today.month - 1, key="ps_month")
+    year, month = int(year), int(month)
+
+    total = CF.month_total(portfolio, dists, year, month, latest_rate=summary.usdkrw)
+
+    with c2:
+        a, b, c = st.columns(3)
+        with a:
+            kcard(F.won(total.amount_krw), f"{month}월 ETF 월급",
+                  "예상값 포함" if total.has_estimate else "확인된 금액")
+        with b:
+            kcard(F.won(total.tax_basis_krw), "세금 계산에 잡히는 금액",
+                  f"자료 없는 건 {total.unknown_tax_basis_rows}건"
+                  if total.tax_basis_is_partial else "전부 확인됨")
+        with c:
+            kcard(F.won(total.non_taxed_krw), "세금에 안 잡힌 금액",
+                  "과세표준 자료가 있는 건만 계산")
+
+    st.write("")
+    section(f"{year}년 {month}월 급여명세서")
+    if not total.rows:
+        note("이 달에는 지급 내역이 없습니다.")
+    else:
+        st.dataframe(
+            [
+                {
+                    "날짜": F.md(r.payment_date),
+                    "ETF": r.name,
+                    "증권사": r.holding.broker or "-",
+                    "계좌": r.holding.account or "-",
+                    "수량": F.shares(r.holding.shares),
+                    "받는 금액": F.won(r.amount_krw),
+                    "세금 계산 기준": F.won(r.tax_basis_krw) if r.has_tax_basis else "자료 없음",
+                    "": "🟡 예상" if r.is_estimated else "🟢 확인",
+                }
+                for r in total.rows
+            ],
+            use_container_width=True, hide_index=True,
+        )
+
+    st.write("")
+    render_calendar(year, month, total)
+
+    st.write("")
+    section(f"{year}년 월별 추이", "막대가 높을수록 그 달에 많이 들어온 달입니다.")
+    series = CF.monthly_series(portfolio, dists, year, latest_rate=summary.usdkrw)
+    # ⚠ 라벨을 "1월".."12월" 로 두면 문자열 순으로 정렬돼 10·11·12월이 앞으로 갑니다.
+    #    두 자리로 맞춰야("01월") 1월부터 제대로 늘어섭니다.
+    st.bar_chart(
+        pd.DataFrame({"ETF 월급(원)": [t.amount_krw for _, t in series]},
+                     index=[f"{m:02d}월" for m, _ in series]),
+        height=220,
+    )
+
+
+def render_calendar(year: int, month: int, total: CF.PeriodTotal) -> None:
+    """분배금 달력. 돈이 들어오는 날을 눈으로 찾게 해 줍니다."""
+    section(f"{month}월 분배금 달력")
+    by_day = CF.calendar_of(total.rows)
+    first_weekday, days_in_month = monthrange(year, month)   # 월요일=0
+    # 한국 달력은 일요일부터 시작합니다.
+    lead = (first_weekday + 1) % 7
+
+    cells = ["<div class='cal'>"]
+    for name in ("일", "월", "화", "수", "목", "금", "토"):
+        cells.append(f"<div class='h'>{name}</div>")
+    for _ in range(lead):
+        cells.append("<div class='d empty'></div>")
+    for day in range(1, days_in_month + 1):
+        d = date(year, month, day)
+        got = by_day.get(d)
+        if got:
+            mark = "🟡" if got.has_estimate else ""
+            cells.append(f"<div class='d pay'><div class='n'>{day}</div>"
+                         f"<div class='m'>+{F.won_short(got.amount_krw)}{mark}</div></div>")
+        else:
+            cells.append(f"<div class='d'><div class='n'>{day}</div></div>")
+    cells.append("</div>")
+    st.markdown("".join(cells), unsafe_allow_html=True)
+
+    if by_day:
+        picked = st.selectbox(
+            "날짜를 고르면 그날 들어오는 종목을 볼 수 있습니다",
+            sorted(by_day.keys()),
+            format_func=lambda d: f"{d.month}월 {d.day}일 — {F.won(by_day[d].amount_krw)}",
+            key=f"cal_{year}_{month}",
+        )
+        for r in by_day[picked].rows:
+            listrow(r.name, f"{r.holding.where()} · {F.shares(r.holding.shares)}",
+                    F.won(r.amount_krw),
+                    f"세금 기준 {F.won(r.tax_basis_krw)}" if r.has_tax_basis else "세금 기준 자료 없음",
+                    chip="예상" if r.is_estimated else "")
+
+
+# =====================================================================
+# 7. 종목별 상세
+# =====================================================================
+def render_detail() -> None:
+    groups = PS.group_by_ticker(summary)
+    if not groups:
+        note("등록된 종목이 없습니다.")
+        return
+    labels = {f"{g.name} ({g.ticker})": g for g in groups}
+    picked = st.selectbox("종목", list(labels.keys()), key="detail_pick")
+    g = labels[picked]
+    td = dists.get((g.market, g.ticker))
+
+    st.markdown(f"### {g.name}")
+    # 차트·뉴스처럼 이 앱이 안 만드는 것은 네이버 증권으로 넘깁니다.
+    # 주소를 못 찾으면 링크를 안 그립니다(빈 페이지로 보내지 않으려고).
+    naver = naver_link_service.url_for(g.market, g.ticker)
+    where = "미국" if g.market == MARKET_US else "한국"
+    if naver:
+        st.markdown(
+            f"<span class='note'>{g.ticker} · {where} 상장</span>"
+            f"&nbsp;&nbsp;<a class='chip' href='{naver}' target='_blank' rel='noopener'"
+            f" title='PC·모바일 모두 같은 주소로 열립니다'>Npay증권 ↗</a>",
+            unsafe_allow_html=True,
+        )
+    else:
+        note(f"{g.ticker} · {where} 상장")
+
+    v = g.value_krw(summary.usdkrw)
+    c = g.cost_krw(summary.usdkrw)
+    a, b, cc, dd = st.columns(4)
+    with a:
+        kcard(F.shares(g.total_shares), "내가 가진 수량",
+              f"{len(g.rows)}개 계좌")
+    with b:
+        kcard(F.native_amt(g.avg_price, g.currency), "평균 매입가격")
+    with cc:
+        kcard(F.native_amt(g.price, g.currency), "지금 가격",
+              "Yahoo Finance" if g.market == MARKET_US else "FinanceDataReader")
+    with dd:
+        profit = (v - c) if (v is not None and c is not None) else None
+        kcard(F.won(v), "지금 내 돈",
+              F.won_signed(profit) if profit is not None else "",
+              tone="up" if (profit or 0) > 0 else ("down" if (profit or 0) < 0 else ""))
+
+    st.write("")
+    section("계좌별 보유 현황")
+    st.dataframe(
+        [
+            {
+                "증권사": r.holding.broker or "-",
+                "계좌": r.holding.account or "-",
+                "수량": F.shares(r.holding.shares),
+                "평균 매입가격": F.native_amt(r.holding.avg_price, g.currency),
+                "지금 내 돈": F.won(r.value_krw(summary.usdkrw)),
+            }
+            for r in g.rows
+        ],
+        use_container_width=True, hide_index=True,
+    )
+
+    st.write("")
+    section("💰 이 ETF 의 월급")
+    if td is None or not td.ok:
+        warn(f"분배금 자료를 가져오지 못했습니다. {td.error if td else ''}")
+        return
+
+    items = td.series.sorted_desc()
+    last = items[0] if items else None
+    interval = DS.infer_interval_days(items)
+    nxt = DS.estimate_next(td, today)
+
+    a, b, cc = st.columns(3)
+    with a:
+        kcard(F.native_amt(last.distribution_per_share if last else None, g.currency),
+              "가장 최근 주당 분배금",
+              F.ymd(last.payment_date) if last else "")
+    with b:
+        mine = (last.distribution_per_share * g.total_shares) if last else None
+        kcard(F.won(fx_service.to_krw(mine, g.currency, summary.usdkrw)),
+              "그때 내 수량이면 받는 금액", DS.cycle_label(interval))
+    with cc:
+        if nxt:
+            mine_next = nxt.distribution_per_share * g.total_shares
+            kcard(F.won(fx_service.to_krw(mine_next, g.currency, summary.usdkrw)),
+                  f"다음 예상 ({F.ymd(nxt.payment_date)})", "🟡 예상값입니다")
+        else:
+            kcard(config.NO_DATA_TEXT, "다음 지급 예상", "근거가 부족해 예상하지 않았습니다")
+
+    if nxt:
+        note(f"※ {nxt.note}")
+
+    st.write("")
+    section("세금 계산에 잡히는 금액",
+            "운용사가 발표하는 '주당 과세표준액' 입니다. 분배금과 전혀 다른 금액일 수 있습니다.")
+    if not td.tax_basis_supported:
+        warn("이 종목은 과세표준 자료를 제공하는 소스를 찾지 못했습니다. "
+             "금액을 추측해서 채우지 않고 '자료 없음' 으로 둡니다.")
+    else:
+        latest_tb = next((d for d in items if d.tax_basis_per_share is not None), None)
+        a, b = st.columns(2)
+        with a:
+            kcard(F.native_amt(latest_tb.tax_basis_per_share if latest_tb else None, g.currency),
+                  "가장 최근 주당 과세표준액",
+                  F.ymd(latest_tb.payment_date) if latest_tb else "아직 발표된 값이 없습니다")
+        with b:
+            mine_tb = (latest_tb.tax_basis_per_share * g.total_shares) if latest_tb else None
+            kcard(F.won(fx_service.to_krw(mine_tb, g.currency, summary.usdkrw)),
+                  "내 수량 기준 세금 계산 금액")
+
+    st.write("")
+    section("최근 지급 내역")
+    st.dataframe(
+        [
+            {
+                "지급월": f"{d.payment_date.year}.{d.payment_date.month:02d}",
+                "지급일": F.ymd(d.payment_date),
+                "주당 분배금": F.native_amt(d.distribution_per_share, g.currency),
+                "주당 과세표준액": (F.native_amt(d.tax_basis_per_share, g.currency)
+                              if d.has_tax_basis else "아직 발표 전"),
+                "내 수량 기준": F.won(fx_service.to_krw(
+                    d.distribution_per_share * g.total_shares, g.currency, summary.usdkrw)),
+            }
+            for d in items[:24]
+        ],
+        use_container_width=True, hide_index=True,
+    )
+    note(f"출처 · {td.source}" + (f" ({td.source_url})" if td.source_url else ""))
+
+
+# =====================================================================
+# 8. 종목 추가 / 수정 / 삭제
+# =====================================================================
+def broker_options() -> list[str]:
+    used = portfolio.brokers_in_use()
+    extra = [b for b in portfolio.brokers if b not in used]
+    base = [b for b in config.DEFAULT_BROKERS if b not in used and b not in extra]
+    return used + extra + base
+
+
+def account_options() -> list[str]:
+    used: list[str] = []
+    for h in portfolio.holdings:
+        if h.account and h.account not in used:
+            used.append(h.account)
+    extra = [a for a in portfolio.account_types if a not in used]
+    base = [a for a in config.DEFAULT_ACCOUNT_TYPES if a not in used and a not in extra]
+    return used + extra + base
+
+
+def render_manage() -> None:
+    section("➕ 내 ETF 추가", "다섯 가지만 넣으면 됩니다. 처음 산 날짜는 안 물어봅니다.")
+
+    q = st.text_input("어떤 ETF 인가요?",
+                      placeholder="SCHD · 069500 · KODEX 200 처럼 입력하세요",
+                      key="add_query")
+    hit = None
+    if q:
+        hits = search_service.search(q, limit=20)
+        if not hits:
+            note("찾지 못했습니다. 종목코드(6자리)나 정확한 티커로 다시 시도해 보세요.")
+        else:
+            labels = {h.label(): h for h in hits}
+            picked = st.selectbox("찾은 종목", list(labels.keys()), key="add_pick")
+            hit = labels[picked]
+
+    c1, c2 = st.columns(2)
+    with c1:
+        broker = st.selectbox("어디에 가지고 있나요?", broker_options() + ["+ 직접 입력"],
+                              key="add_broker")
+        if broker == "+ 직접 입력":
+            broker = st.text_input("증권사 이름", key="add_broker_custom").strip()
+    with c2:
+        account = st.selectbox("어떤 계좌인가요?", account_options() + ["+ 직접 입력"],
+                               key="add_account")
+        if account == "+ 직접 입력":
+            account = st.text_input("계좌 이름", key="add_account_custom").strip()
+
+    c3, c4 = st.columns(2)
+    with c3:
+        qty = st.number_input("몇 주 가지고 있나요?", min_value=0.0, step=1.0,
+                              value=0.0, key="add_qty")
+    with c4:
+        unit = "$" if (hit and hit.market == MARKET_US) else "₩"
+        price = st.number_input(f"평균적으로 얼마에 샀나요? ({unit})", min_value=0.0,
+                                step=1.0, value=0.0, format="%.4f", key="add_price")
+
+    if st.button("저장", type="primary", disabled=(hit is None or qty <= 0)):
+        portfolio.add(Holding(
+            ticker=hit.ticker, market=hit.market, name=hit.name,
+            broker=broker or "", account=account or "", account_type=account or "",
+            shares=float(qty), avg_price=float(price),
+        ))
+        if broker and broker not in portfolio.brokers \
+                and broker not in config.DEFAULT_BROKERS:
+            portfolio.brokers.append(broker)
+        if account and account not in portfolio.account_types \
+                and account not in config.DEFAULT_ACCOUNT_TYPES:
+            portfolio.account_types.append(account)
+        st.success(f"{hit.name} {qty:g}주를 추가했습니다.")
+        st.rerun()
+
+    st.write("")
+    st.divider()
+    section("✏️ 등록한 ETF 고치기",
+            "표에서 바로 고칠 수 있습니다. 지우려면 맨 왼쪽의 '삭제' 를 체크하고 아래 버튼을 누르세요.")
+
+    if not portfolio.holdings:
+        note("아직 등록된 ETF 가 없습니다.")
+        return
+
+    rows = [
+        {
+            "삭제": False,
+            "ETF": h.name or h.ticker,
+            "종목코드": h.ticker,
+            "증권사": h.broker,
+            "계좌": h.account,
+            "수량": float(h.shares),
+            "평균 매입가격": float(h.avg_price),
+            "_id": h.id,
+        }
+        for h in portfolio.holdings
+    ]
+    edited = st.data_editor(
+        rows,
+        key="editor",
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "삭제": st.column_config.CheckboxColumn(width="small"),
+            "ETF": st.column_config.TextColumn(disabled=True),
+            "종목코드": st.column_config.TextColumn(disabled=True, width="small"),
+            "수량": st.column_config.NumberColumn(min_value=0.0, step=1.0),
+            "평균 매입가격": st.column_config.NumberColumn(min_value=0.0, format="%.4f"),
+            "_id": None,
+        },
+    )
+
+    if st.button("고친 내용 적용", type="primary"):
+        keep: list[Holding] = []
+        for row in edited:
+            h = portfolio.by_id(str(row.get("_id")))
+            if h is None or row.get("삭제"):
+                continue
+            h.broker = str(row.get("증권사") or "")
+            h.account = str(row.get("계좌") or "")
+            h.account_type = h.account
+            h.shares = max(0.0, float(row.get("수량") or 0))
+            h.avg_price = max(0.0, float(row.get("평균 매입가격") or 0))
+            keep.append(h)
+        portfolio.holdings = keep
+        st.success("반영했습니다.")
+        st.rerun()
+
+
+# =====================================================================
+# 9. 저장
+# =====================================================================
+def render_save() -> None:
+    section("💾 저장", "이 브라우저에 자동으로 저장됩니다. 회원가입도 서버 저장도 없습니다.")
+
+    if st.session_state.get("storage_writable", True):
+        note("✅ 바꾸는 즉시 이 브라우저에 저장됩니다. "
+             "다른 기기·다른 브라우저에서는 보이지 않으니, 옮기려면 아래에서 파일로 내려받으세요.")
+    else:
+        warn("이 브라우저는 저장이 막혀 있습니다(시크릿 모드 등). "
+             "창을 닫으면 내용이 사라지니 아래에서 파일로 내려받아 두세요.")
+
+    st.write("")
+    section("포트폴리오 여러 개 두기", "'내 계좌', '와이프 계좌' 처럼 나눠서 관리할 수 있습니다.")
+
+    names = store.names()
+    c1, c2 = st.columns([2, 3])
+    with c1:
+        picked = st.radio("지금 보고 있는 것", names,
+                          index=names.index(store.current), key="profile_pick")
+        if picked != store.current:
+            store.current = picked
+            st.rerun()
+    with c2:
+        new_name = st.text_input("새로 만들기", placeholder="예: 와이프 계좌", key="profile_new")
+        b1, b2, b3 = st.columns(3)
+        with b1:
+            if st.button("만들기", use_container_width=True, disabled=not new_name.strip()):
+                store.create(new_name)
+                st.rerun()
+        with b2:
+            if st.button("복사하기", use_container_width=True):
+                store.duplicate(store.current)
+                st.rerun()
+        with b3:
+            if st.button("삭제", use_container_width=True, disabled=len(names) <= 1):
+                store.delete(store.current)
+                st.rerun()
+
+        rename_to = st.text_input("이름 바꾸기", value=store.current, key="profile_rename")
+        if st.button("이름 바꾸기 적용", disabled=(rename_to.strip() == store.current)):
+            store.rename(store.current, rename_to)
+            st.rerun()
+
+    st.write("")
+    section("파일로 내려받기 / 올리기", "다른 기기로 옮기거나 백업할 때 씁니다.")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.download_button(
+            "💾 저장 파일 내려받기 (JSON)",
+            data=STORE.dumps(store).encode("utf-8"),
+            file_name=config.EXPORT_FILENAME,
+            mime="application/json",
+            use_container_width=True,
+        )
+        note(f"포트폴리오 {len(names)}개 · 종목 {STORE.count_holdings(store)}줄")
+    with c2:
+        up = st.file_uploader("📂 저장 파일 올리기", type=["json"], key="upload")
+        if up is not None:
+            loaded, err = STORE.loads(up.getvalue().decode("utf-8", "replace"))
+            if loaded is None:
+                warn(err)
+            else:
+                if st.button("이 파일로 바꾸기", type="primary"):
+                    st.session_state["store"] = loaded
+                    st.rerun()
+                note(f"읽었습니다 — 포트폴리오 {len(loaded.names())}개 · "
+                     f"종목 {STORE.count_holdings(loaded)}줄. 위 버튼을 누르면 교체됩니다.")
+
+
+# =====================================================================
+# 10. 화면 조립
+# =====================================================================
+if not has_holdings:
+    render_empty()
+    st.divider()
+    render_manage()
+    st.divider()
+    render_save()
+else:
+    tabs = st.tabs(["🏠 홈", "📅 월별 급여명세서", "🔎 종목별 상세", "➕ 종목 관리", "💾 저장"])
+    with tabs[0]:
+        render_home()
+    with tabs[1]:
+        render_payslip()
+    with tabs[2]:
+        render_detail()
+    with tabs[3]:
+        render_manage()
+    with tabs[4]:
+        render_save()
+
+# ---------------------------------------------------------------------
+st.divider()
+c1, c2 = st.columns([3, 1])
+with c1:
+    note(f"※ {config.DISCLAIMER_SHORT}")
+    stamps = []
+    if summary is not None and summary.data_as_of:
+        stamps.append(f"데이터 기준일 {F.ymd(summary.data_as_of)}")
+    if fx is not None:
+        stamps.append(f"환율 1 USD = {fx.rate:,.1f}원 ({F.ymd(fx.as_of)})")
+    stamps.append(f"마지막 계산 {config.now_local():%Y.%m.%d %H:%M} {config.TIMEZONE_LABEL}")
+    note(" · ".join(stamps))
+with c2:
+    if st.button("🔄 정보 업데이트", use_container_width=True,
+                 help="가격·환율·분배금·과세표준을 새로 받아옵니다."):
+        cache.invalidate()
+        st.rerun()
+
+# =====================================================================
+# 11. 브라우저 저장소에 쓰기 — ⚠ 반드시 맨 아래
+#     (이번 렌더에서 사용자가 고친 내용까지 반영된 뒤여야 합니다)
+# =====================================================================
+local_store(mode="write", data=STORE.dumps(store), key="ls_write")

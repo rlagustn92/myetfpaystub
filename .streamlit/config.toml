@@ -1,0 +1,14 @@
+# 밝은 테마 고정.
+# 이 파일을 저장소에 안 올리면 다크모드 기기에서 글자가 안 보입니다.
+[theme]
+base = "light"
+primaryColor = "#1454FF"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F7FA"
+textColor = "#1A1D23"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
