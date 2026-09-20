@@ -88,3 +88,58 @@ def test_disclaimer_is_always_on_screen(offline):
 def test_update_button_exists(offline):
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert any("정보 업데이트" in b.label for b in at.button)
+
+
+# --------------------------------------------------------- 종목 추가 흐름
+@pytest.fixture
+def fake_search(monkeypatch):
+    """종목 검색이 FinanceDataReader 목록(무겁습니다)을 타지 않게 합니다."""
+    from services import search_service
+    from models.portfolio import MARKET_US
+
+    def fake(query, market="ALL", limit=30):
+        if not query:
+            return []
+        return [search_service.SearchHit(MARKET_US, "SCHD",
+                                         "Schwab US Dividend Equity ETF", "ETF")]
+
+    monkeypatch.setattr(search_service, "search", fake)
+
+
+def test_adding_a_holding_puts_it_on_the_home_screen(offline, fake_search):
+    at = AppTest.from_file(APP, default_timeout=90).run()
+
+    box = [t for t in at.text_input if "어떤 ETF" in t.label][0]
+    box.set_value("SCHD").run()
+
+    # 종목은 골랐지만 수량이 0이면 아직 저장할 수 없어야 합니다.
+    assert [b for b in at.button if b.label == "저장"][0].disabled is True
+
+    qty = [n for n in at.number_input if "몇 주" in n.label][0]
+    qty.set_value(180).run()
+    price = [n for n in at.number_input if "얼마에 샀나요" in n.label][0]
+    price.set_value(30.5).run()
+
+    [b for b in at.button if b.label == "저장"][0].click().run()
+    assert not at.exception
+
+    text = " ".join(m.value for m in at.markdown)
+    assert "지금 내 ETF 자산" in text          # 빈 화면에서 홈 화면으로 넘어감
+    assert "Schwab US Dividend Equity ETF" in text
+
+
+def test_save_button_is_blocked_until_a_stock_and_amount_are_chosen(offline, fake_search):
+    at = AppTest.from_file(APP, default_timeout=90).run()
+    save = [b for b in at.button if b.label == "저장"][0]
+    assert save.disabled is True              # 아무것도 안 골랐으면 못 누릅니다
+
+
+def test_example_portfolio_lands_in_every_tab_without_error(offline, fake_search):
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    [b for b in at.button if "예시" in b.label][0].click().run()
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "KODEX 200" in text
+    # 탭 다섯 개가 다 그려졌는지 (AppTest 는 숨은 탭도 실행합니다)
+    assert "분배금 달력" in text          # 월별 탭
+    assert "포트폴리오 여러 개 두기" in text   # 저장 탭

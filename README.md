@@ -183,7 +183,7 @@ streamlit run app.py
 ## 12. 개발 / 테스트
 
 ```bash
-python -m pytest -q          # 네트워크 없이 도는 단위 테스트 (122개)
+python -m pytest -q          # 네트워크 없이 도는 단위 테스트 (125개)
 python -m pytest -m network  # 실제 운용사/시세 호출 (15개) — 배포 전에 한 번씩
 ```
 
