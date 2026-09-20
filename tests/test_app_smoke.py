@@ -143,3 +143,25 @@ def test_example_portfolio_lands_in_every_tab_without_error(offline, fake_search
     # 탭 다섯 개가 다 그려졌는지 (AppTest 는 숨은 탭도 실행합니다)
     assert "분배금 달력" in text          # 월별 탭
     assert "포트폴리오 여러 개 두기" in text   # 저장 탭
+
+
+def test_pitch_is_on_the_home_screen(offline, fake_search):
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    [b for b in at.button if "예시" in b.label][0].click().run()
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "전술판" in text
+    assert "유니폼 숫자" in text        # 등번호가 무슨 뜻인지 화면이 말해줘야 합니다
+
+
+def test_pitch_slots_are_saved_with_the_portfolio(offline, fake_search):
+    """자리를 바꿔놨는데 새로고침하면 흩어져 있으면 쓸모가 없습니다."""
+    import json
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    [b for b in at.button if "예시" in b.label][0].click().run()
+    assert not at.exception
+    store = at.session_state["store"]
+    saved = json.loads(__import__("services.storage_service", fromlist=["x"]).dumps(store))
+    slots = saved["profiles"][store.current]["slots"]
+    assert len(slots) == 4                     # 예시 4종목 전부 자리를 받음
+    assert len(set(slots.values())) == 4       # 겹치지 않음

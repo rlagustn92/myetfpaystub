@@ -61,7 +61,7 @@
 ## 실행과 테스트
 
 ```bash
-python -m pytest -q          # 전체 (네트워크 테스트는 자동 제외, 125개)
+python -m pytest -q          # 전체 (네트워크 테스트는 자동 제외, 148개)
 python -m pytest -m network  # 실제 운용사/시세 호출 (15개, 20초쯤)
 streamlit run app.py         # 로컬 실행
 ```
@@ -95,6 +95,14 @@ streamlit run app.py         # 로컬 실행
 - **KIWOOM(키움)은 과세표준을 공개하지만 붙이지 못했습니다.** 그 서버가 TLS 중간
   인증서를 안 보내서 파이썬에서 검증이 실패합니다. `verify=False` 로 끄지 마세요.
   자세한 건 docs/DATA_SOURCES.md §2-8.
+- **전술판 자리는 보유 줄이 아니라 종목(티커)에 붙습니다.** 같은 ETF 를 세 계좌에
+  나눠 가져도 카드는 하나만 섭니다. `Portfolio.slots` 의 열쇠는 `"KR:069500"` 형태.
+- **📸 캡처 이미지와 📋 텍스트는 같은 줄에서 만듭니다**(`pitch_service.share_rows`).
+  따로 만들면 같은 포트폴리오를 두 군데 올렸을 때 숫자가 어긋나 보입니다.
+- **전술판 카드의 등번호는 실제 보유 비중입니다.** 원본(ETF MANAGER)은 사용자가
+  입력한 목표비중이었습니다. 여기서는 수량 × 현재가로 저절로 정해집니다.
+- **`pitch_service._ROW_BY_KEYWORD` 는 순서가 중요합니다.** "커버드콜" 이 "200"
+  보다 앞에 있어야 "KODEX 200타겟위클리커버드콜" 이 제 라인으로 갑니다.
 - **날짜는 전부 `config.today_local()`** 을 씁니다. 서버가 UTC 라 `date.today()` 를 쓰면
   한국 시간 오전 9시에 날짜가 바뀝니다.
 
@@ -119,6 +127,9 @@ services/                  순수 계산 (테스트는 주로 여기)
   fx_service.py            환율 규칙 (과거는 그때 환율, 현재는 최신 환율)
   storage_service.py       저장/불러오기 (포트폴리오 여러 개)
   search_service.py        종목 검색
+  pitch_service.py         전술판 — 보유 비중을 등번호로, 자리 배치
+  share_service.py         📸 이미지 명단 · 📋 텍스트 (같은 줄에서 만듭니다)
+  naver_link_service.py    네이버 증권 바로가기
   visitor_service.py       TODAY / TOTAL
 
 data/providers/
@@ -136,6 +147,9 @@ data/issuer_index.csv      843건 매핑 시드 (tools/build_issuer_index.py 로
 components/
   ui.py                    카드·목록·달력 + CSS (색은 여기서만 정합니다)
   local_store/             브라우저 저장소 통로 (순수 HTML/JS, 빌드 단계 없음)
+  football_pitch/          ⚽ 전술판 (ETF MANAGER 2027 에서 옮겨 옴, 순수 HTML/JS)
+  pitch_grid.py            슬롯 격자 5칸 × 6라인 = 26자리
+  pitch_kit.py             유니폼 색(운용사 브랜드) + 긴 한국 ETF 이름 축약
 tools/build_issuer_index.py  매핑 시드 배치 — 개발자 PC 에서만 실행
 tests/                     pytest
 ```
@@ -154,6 +168,10 @@ tests/                     pytest
 | 운용사 추가 | `data/providers/issuer/` 에 파일 추가 + `registry.KR_ISSUERS` 에 한 줄 |
 | 시세 소스 교체 | `data/providers/price_provider.py` 의 `get_price_provider` |
 | 색·카드 모양 | `components/ui.py` |
+| 전술판 자리 배치·등번호 | `services/pitch_service.py` |
+| 전술판 모양·캡처 이미지 | `components/football_pitch/frontend/index.html` |
+| 유니폼 색 / 이름 축약 | `components/pitch_kit.py` |
+| 공유용 텍스트 | `services/share_service.py` |
 | 화면 배치 | `app.py` |
 
 ---

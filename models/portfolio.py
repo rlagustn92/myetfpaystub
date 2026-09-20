@@ -115,6 +115,15 @@ class Holding:
         )
 
 
+def ticker_key(market: str, ticker: str) -> str:
+    """전술판 슬롯을 기억하는 열쇠. 'US:SCHD' / 'KR:069500'.
+
+    슬롯은 **보유 줄이 아니라 종목**에 붙습니다. 같은 ETF 를 세 계좌에 나눠
+    갖고 있어도 전술판에는 카드가 하나만 서기 때문입니다.
+    """
+    return f"{str(market).upper()}:{str(ticker).strip().upper()}"
+
+
 @dataclass
 class Portfolio:
     """저장/불러오기의 단위. 사용자는 이걸 여러 개 만들어 둘 수 있습니다."""
@@ -123,6 +132,8 @@ class Portfolio:
     holdings: list[Holding] = field(default_factory=list)
     brokers: list[str] = field(default_factory=list)        # 사용자가 추가한 증권사
     account_types: list[str] = field(default_factory=list)  # 사용자가 추가한 계좌 유형
+    # 전술판 배치 { "KR:069500": "DF-C", ... }. 사용자가 끌어다 놓은 자리입니다.
+    slots: dict[str, str] = field(default_factory=dict)
 
     # -- 조회 --------------------------------------------------------
     def by_id(self, holding_id: str) -> Holding | None:
@@ -163,6 +174,7 @@ class Portfolio:
             "holdings": [h.to_dict() for h in self.holdings],
             "brokers": list(self.brokers),
             "account_types": list(self.account_types),
+            "slots": dict(self.slots),
         }
 
     @staticmethod
@@ -176,9 +188,18 @@ class Portfolio:
                 h = Holding.from_dict(item)
                 if h is not None:
                     holdings.append(h)
+        raw_slots = d.get("slots")
+        slots: dict[str, str] = {}
+        if isinstance(raw_slots, dict):
+            # 저장 파일을 손으로 고쳤을 수도 있어서 문자열인 것만 받습니다.
+            for k, v in raw_slots.items():
+                if isinstance(k, str) and isinstance(v, str) and k and v:
+                    slots[k] = v
+
         return Portfolio(
             name=str(d.get("name") or "내 포트폴리오"),
             holdings=holdings,
             brokers=[str(x) for x in (d.get("brokers") or []) if str(x).strip()],
             account_types=[str(x) for x in (d.get("account_types") or []) if str(x).strip()],
+            slots=slots,
         )

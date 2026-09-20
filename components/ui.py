@@ -88,6 +88,9 @@ CSS = """
   .chip { display:inline-block; font-size:.72rem; font-weight:700; border-radius:999px;
           padding:2px 8px; background:var(--bg-soft); color:var(--ink-soft);
           margin-left:6px; white-space:nowrap; }
+  a.chip.link { color:var(--brand); text-decoration:none; border:1px solid #D7E3FF;
+                background:#F3F7FF; }
+  a.chip.link:hover { background:#E6EFFF; }
 
   .note { font-size:.8rem; color:var(--ink-faint); }
   .warn { background:var(--warn-bg); border:1px solid var(--warn-line); border-radius:12px;
@@ -168,8 +171,17 @@ def paycard(amount: str, caption: str, label: str, subs: list[tuple[str, str]]) 
 
 
 def listrow(name: str, subtitle: str, amount: str, amount_sub: str = "",
-            chip: str = "") -> None:
+            chip: str = "", link: str = "", link_text: str = "Npay증권 ↗") -> None:
+    """목록 한 줄. `link` 를 주면 이름 옆에 작은 바로가기 칩이 붙습니다.
+
+    ⚠ 칩 글자는 짧게 두세요. "Npay증권(PC·모바일)" 처럼 길게 달았더니 종목명이
+    조금만 길어져도 칩이 다음 줄로 밀렸습니다. 설명은 툴팁으로 답니다.
+    """
     chip_html = f"<span class='chip'>{_esc(chip)}</span>" if chip else ""
+    if link:
+        chip_html += (f"<a class='chip link' href='{_esc(link)}' target='_blank'"
+                      f" rel='noopener' title='PC·모바일 모두 같은 주소로 열립니다'>"
+                      f"{_esc(link_text)}</a>")
     sub_html = f"<div class='sb'>{_esc(amount_sub)}</div>" if amount_sub else ""
     st.markdown(
         f"<div class='row'><div><div class='nm'>{_esc(name)}{chip_html}</div>"

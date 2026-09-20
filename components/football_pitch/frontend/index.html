@@ -1,0 +1,1002 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { --line: rgba(255,255,255,0.78); --slot: rgba(255,255,255,0.30); }
+  * { box-sizing: border-box; }
+  /* overflow:hidden -- 이 iframe 은 내용 높이에 딱 맞춰 잡히므로 스스로 스크롤될 일이
+     없습니다. 1px 이라도 넘쳐 스크롤 가능해지면, 전술판 위에서 휠을 돌릴 때 휠 이벤트를
+     iframe 이 먼저 먹었다가 바깥 페이지로 넘기면서 스크롤이 툭툭 끊깁니다. */
+  html, body { margin: 0; padding: 0; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", Roboto, sans-serif; }
+  #wrap { padding: 6px; }
+  #topbar, #botbar { display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 13px; font-weight: 700; letter-spacing: .02em; padding: 3px 0; position: relative; }
+  /* 오른쪽 버튼들은 absolute 라 공간을 차지하지 않습니다. padding 으로 자리를 비워 두지
+     않으면 가운데 문구가 버튼 밑으로 파고듭니다(실제로 겹쳤습니다).
+     좁은 화면에서는 문구를 "…" 로 줄여서 버튼을 가리지 않게 합니다. */
+  #topbar { color: #b23b3b; padding-right: 196px; }
+  #topbar .dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #botbar { color: #1f6f3a; }
+  #tools { position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+    display: flex; gap: 4px; }
+  .tbtn {
+    font-size: 11px; font-weight: 500; letter-spacing: 0; color: #666;
+    background: rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.12); border-radius: 6px;
+    padding: 2px 7px; cursor: pointer; line-height: 1.5; white-space: nowrap;
+  }
+  .tbtn:hover { background: rgba(0,0,0,0.09); }
+  .tbtn:active { background: rgba(0,0,0,0.14); }
+  .tbtn:disabled { opacity: .6; cursor: default; }
+  #pitch {
+    position: relative; width: 100%; margin: 0 auto; border-radius: 12px; overflow: hidden;
+    /* 잔디 줄무늬: 화면 전체 크기의 큰 그라디언트 하나를 매번 다시 그리는 대신,
+       작은 타일 하나를 반복해서 깝니다 (스크롤 중 다시 칠하는 비용이 줄어듭니다). */
+    background-image: linear-gradient(0deg, #2f8f3f 50%, #2b8639 50%);
+    background-size: 100% 14.4%;
+    box-shadow: inset 0 0 0 2px rgba(0,0,0,0.15);
+    aspect-ratio: 72 / 96;
+    touch-action: none; user-select: none;
+    contain: paint;          /* 이 안의 그리기를 바깥과 분리 */
+  }
+  #svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+  .slot {
+    position: absolute; width: 15%; max-width: 100px; height: 12.6%; min-height: 52px;
+    transform: translate(-50%, -50%);
+    border: 1.5px dashed var(--slot); border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10.5px; color: rgba(255,255,255,0.62); font-weight: 700;
+    pointer-events: none;
+  }
+  .slot.hot { border-color: #ffcf33; border-style: solid; background: rgba(255,207,51,0.16); color: #fff; }
+
+  /* ---- 종목 카드 = 축구 유니폼 + 이름표 --------------------------------------
+     유니폼 색  = 운용사 브랜드 (pitch_kit.py 가 정해서 내려줍니다)
+     등번호     = 살(BUY) 비율.  "%" 를 같이 찍습니다 -- 축구를 모르는 사람은
+                 숫자만 있으면 그냥 등번호로 읽기 때문입니다(사용자 지적).
+     이름표     = 짧게 줄인 종목명. 유니폼 안에 넣으면 어깨·소매가 글씨 공간을
+                 절반이나 먹어서, 밖으로 빼야 글자 수가 유지됩니다.
+     ⚠ 성능: 그림자 blur 를 카드마다 걸면 스크롤할 때마다 다시 칠해져서 끊깁니다.
+        그래서 유니폼에는 아주 약한 drop-shadow 하나만 쓰고, 줄무늬 그라디언트나
+        이미지 파일은 쓰지 않습니다(모양·단색은 공짜입니다). */
+  .card {
+    position: absolute; width: 15%; max-width: 100px;
+    transform: translate(-50%, -50%);
+    cursor: grab; text-align: center;
+    transition: left .12s ease, top .12s ease;
+  }
+  .card.dragging { cursor: grabbing; z-index: 60; transition: none; }
+  .card .shirt { width: 62%; margin: 0 auto; display: block;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.35)); }
+  .card.selected .shirt { filter: drop-shadow(0 0 0 #ffcf33) drop-shadow(0 0 3px #ffcf33); }
+  .card .tag {
+    margin-top: 2px; border-radius: 4px; padding: 1px 3px;
+    /* 글자 크기는 전술판 폭에 맞춰 JS(tagFontPx)가 --tagfs 로 넣어 줍니다.
+       카드 폭은 %(전술판의 15%)인데 글자만 px 로 고정하면, 창이 좁아졌을 때
+       (특히 휴대폰) 이름표가 전부 "…" 로 잘립니다. 실제로 그랬습니다. */
+    font-size: var(--tagfs, 10px); font-weight: 700; line-height: 1.34;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .card.selected .tag { box-shadow: 0 0 0 2px #ffcf33; }
+  .card .warn { position: absolute; top: -2px; right: 2px; width: 8px; height: 8px;
+    border-radius: 50%; background: #e23b3b; border: 1px solid #fff; }
+
+  /* 주장 완장 = 비중이 가장 큰 종목. 축구 화면에서 완장의 뜻은 설명이 필요 없고,
+     "이 포트의 중심이 뭔지" 가 한눈에 보입니다. */
+  .card .cap {
+    position: absolute; top: 1px; left: 1px;
+    font-size: 8px; font-weight: 800; line-height: 1;
+    background: #E8C34A; color: #3a2c05;
+    border-radius: 3px; padding: 1px 3px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.18);
+  }
+
+  /* 카드에 마우스를 올리면 정식 이름 + 정확한 비율. 유니폼 등번호는 반올림한 값이고
+     이름표는 줄인 이름이라, 원래 값을 확인할 곳이 필요합니다.
+     ⚠ 전술판은 overflow:hidden 이라 말풍선이 판 밖으로 나가면 잘립니다. 그래서
+     위쪽 줄 카드는 아래로, 아래쪽 줄 카드는 위로 띄웁니다(render 에서 클래스 지정). */
+  .card .tip {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    background: rgba(17,17,17,.94); color: #fff; border-radius: 6px;
+    padding: 3px 7px; font-size: 10.5px; font-weight: 600; line-height: 1.4;
+    white-space: nowrap; pointer-events: none; z-index: 70;
+    opacity: 0; transition: opacity .12s ease;
+  }
+  .card:hover .tip { opacity: 1; }
+  .card.tip-up   .tip { bottom: calc(100% + 4px); }
+  .card.tip-down .tip { top: calc(100% + 4px); }
+  #hint { margin-top: 6px; font-size: 12px; color: #8a8a8a; text-align: center; }
+
+  /* 아무것도 안 담았을 때 전술판 한가운데 뜨는 안내.
+     텅 빈 초록 화면은 "고장난 건가?" 로 읽힙니다. 뭘 하면 되는지 한 줄이 필요합니다.
+     pointer-events:none 이라 아래의 슬롯·드래그 동작을 방해하지 않습니다. */
+  #empty {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    display: none; flex-direction: column; align-items: center; gap: 6px;
+    pointer-events: none; text-align: center; padding: 14px 18px;
+    background: rgba(0, 0, 0, 0.26); border-radius: 12px;
+    backdrop-filter: blur(1.5px);
+  }
+  #empty .big { font-size: 15px; font-weight: 800; color: #fff; letter-spacing: -0.01em; }
+  #empty .sub { font-size: 12px; color: rgba(255, 255, 255, 0.86); }
+  body.compact #empty .big { font-size: 13.5px; }
+  body.compact #empty .sub { font-size: 11px; }
+
+  /* 컴팩트 모드 (레이아웃 실험용) -- 글씨만 살짝 축소, 배치 로직은 그대로 */
+  body.compact #topbar, body.compact #botbar { font-size: 11.5px; }
+  body.compact .slot { font-size: 9.5px; }
+  /* compact 는 --tagfs 계산에서 반영합니다(여기서 덮어쓰면 반응형이 깨집니다) */
+  body.compact #hint { font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="topbar"><span class="dir">▲ 공격 방향 (상대 골문)</span>
+    <span id="tools">
+      <button id="textBtn" class="tbtn" title="포트폴리오 복사">📋 텍스트</button>
+      <button id="captureBtn" class="tbtn"
+        title="전술판 + 내 요약을 이미지로 클립보드에 복사 (게시판 글쓰기 창에 바로 Ctrl+V)">📸 복사</button>
+      <button id="saveBtn" class="tbtn"
+        title="PNG 파일로 내려받기 (브라우저 다운로드 폴더에 저장됩니다)">💾 저장</button>
+    </span>
+  </div>
+  <div id="pitch">
+    <svg id="svg" viewBox="0 0 1000 1400" preserveAspectRatio="none">
+      <!-- 우리 진영(아래 절반) 살짝 밝게 -->
+      <rect x="10" y="700" width="980" height="690" fill="rgba(255,255,255,0.055)"/>
+      <!-- 외곽선 -->
+      <rect x="10" y="10" width="980" height="1380" fill="none" stroke="var(--line)" stroke-width="3"/>
+      <!-- 하프라인 + 센터서클 -->
+      <line x1="10" y1="700" x2="990" y2="700" stroke="var(--line)" stroke-width="3"/>
+      <circle cx="500" cy="700" r="150" fill="none" stroke="var(--line)" stroke-width="3"/>
+      <circle cx="500" cy="700" r="6" fill="var(--line)"/>
+      <!-- 위(상대) 골문 -->
+      <rect x="250" y="10" width="500" height="250" fill="none" stroke="var(--line)" stroke-width="3"/>
+      <rect x="390" y="10" width="220" height="100" fill="none" stroke="var(--line)" stroke-width="3"/>
+      <rect x="443" y="2" width="114" height="12" fill="none" stroke="var(--line)" stroke-width="3"/>
+      <path d="M360 260 A 170 170 0 0 0 640 260" fill="none" stroke="var(--line)" stroke-width="3"/>
+      <!-- 아래(우리) 골문 : 더 두껍게 -->
+      <rect x="250" y="1140" width="500" height="250" fill="none" stroke="var(--line)" stroke-width="3"/>
+      <rect x="390" y="1290" width="220" height="100" fill="none" stroke="var(--line)" stroke-width="3"/>
+      <rect x="443" y="1386" width="114" height="12" fill="#ffffff" stroke="#1f6f3a" stroke-width="3"/>
+      <path d="M360 1140 A 170 170 0 0 1 640 1140" fill="none" stroke="var(--line)" stroke-width="3"/>
+    </svg>
+    <div id="empty">
+      <span class="big">ETF 를 등록하면 여기에 선수로 섭니다</span>
+      <span class="sub">왼쪽에서 검색하거나, 위의 예시를 한 번 눌러보세요</span>
+    </div>
+  </div>
+  <div id="botbar">🏠 우리 진영 · 골키퍼 ▼</div>
+  <div id="hint"></div>
+</div>
+
+<script>
+function _send(type, data) {
+  window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*");
+}
+const Streamlit = {
+  RENDER_EVENT: "streamlit:render",
+  ready: () => _send("streamlit:componentReady", { apiVersion: 1 }),
+  setFrameHeight: (h) => _send("streamlit:setFrameHeight", { height: h }),
+  setComponentValue: (v) => _send("streamlit:setComponentValue", { value: v, dataType: "json" }),
+  onRender: (cb) => window.addEventListener("message", (e) => {
+    if (e.data && e.data.type === Streamlit.RENDER_EVENT) cb(e.data.args || {});
+  }),
+};
+
+let players = [];     // {id,ticker,display_name,label,market,kit,weight_pct,slot,has_warning}
+let slots = [];       // {id,row,col,x,y,label,group}
+let summary = null;   // {cells:[{k,v}], note, key_note}
+let legend = [];      // [{name, amount, color, us}]
+let footer = "";
+let captureFilename = "";   // 💾 저장 시 파일 이름 (파이썬이 전술명·날짜로 만들어 내려줌)
+let commentText = "";       // 📋 텍스트 버튼이 복사할 글자 (app.comment_text)
+let selectedId = null;
+let nonce = 0;
+const pitch = document.getElementById("pitch");
+
+function reportHeight() {
+  Streamlit.setFrameHeight(document.getElementById("wrap").scrollHeight + 4);
+}
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function slotById(id) { return slots.find(s => s.id === id); }
+function nearestSlot(nx, ny) {
+  let best = null, bd = 1e9;
+  for (const s of slots) {
+    const d = (s.x - nx) ** 2 + (s.y - ny) ** 2;
+    if (d < bd) { bd = d; best = s; }
+  }
+  return best;
+}
+
+function emit() {
+  nonce += 1;
+  const assignments = {};
+  for (const p of players) assignments[p.id] = p.slot;
+  Streamlit.setComponentValue({ assignments, selected_id: selectedId, nonce });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function fmtPct(v) {
+  if (v === null || v === undefined || isNaN(v)) return "–";
+  return (Math.round(v * 100) / 100).toFixed(2).replace(/\.?0+$/, "") + "%";
+}
+/** 등번호용 숫자.
+ *
+ *  1% 이상은 **정수로 반올림**합니다. 소수점 한 자리까지 쓰면 "16.4%" 가 유니폼 몸통
+ *  밖으로 나가서 앞자리가 잘려 **"6.4%" 로 읽히는 일**이 있었습니다(공유한 이미지에서
+ *  발견). 정확한 값은 아래 이름표 툴팁과 캡처 이미지의 종목 명단에 그대로 있습니다.
+ *  1% 미만은 반올림하면 "0" 이 되어버려서 한 자리를 남깁니다.
+ */
+function fmtNum(v) {
+  if (v === null || v === undefined || isNaN(v)) return "–";
+  return v >= 1 ? String(Math.round(v)) : String(Math.round(v * 10) / 10);
+}
+
+// 등번호가 들어갈 수 있는 몸통 폭(유니폼 좌표 100 기준). 어깨·소매는 못 씁니다.
+const TORSO_W = 52, NUM_PAD = 4;
+const _measCtx = document.createElement("canvas").getContext("2d");
+
+/** 등번호 글자 크기. 몸통 밖으로 삐져나오면 들어갈 때까지 줄입니다.
+ *  "100%" 나 "0.9%" 처럼 긴 값에서도 절대 잘리지 않게 하는 안전장치입니다. */
+function fitNumber(numTxt, pctTxt) {
+  const wide = (t, px) => { _measCtx.font = `bold ${px}px ${FONT}`; return _measCtx.measureText(t).width; };
+  let fs = 30, ps = 15;
+  while (fs > 12 && wide(numTxt, fs) + wide(pctTxt, ps) > TORSO_W - NUM_PAD) {
+    fs -= 0.5; ps = fs / 2;
+  }
+  return { fs, ps, width: wide(numTxt, fs) + wide(pctTxt, ps), numWidth: wide(numTxt, fs) };
+}
+
+// =====================================================================
+// 유니폼 도형 -- 화면(SVG)과 캡처(canvas)가 똑같은 좌표를 씁니다.
+// 좌표계는 가로 100 x 세로 118.
+// =====================================================================
+const SHIRT_PATH = "M34 6 L22 2 L2 22 L16 36 L24 30 L24 106 A4 4 0 0 0 28 110 " +
+                   "L72 110 A4 4 0 0 0 76 106 L76 30 L84 36 L98 22 L78 2 L66 6 " +
+                   "C62 14 56 17 50 17 C44 17 38 14 34 6 Z";
+const COLLAR_PATH = "M34 6 C38 14 44 17 50 17 C56 17 62 14 66 6 L70 8 " +
+                    "C65 19 58 22 50 22 C42 22 35 19 30 8 Z";
+const SHIRT_RATIO = 1.18;            // 세로/가로
+const US_RED = "#C8102E", US_NAVY = "#0A2B5C", US_BODY = "#F8F8F4";
+// 가슴 성조기 패치 (상반신 절반을 채우는 크기 -- 작아져도 미국인 게 바로 보이도록)
+const FLAG = { x: 27, y: 28, w: 46, h: 28 };
+// 한국 종목 유니폼의 태극 위치/크기 (목 바로 아래 한가운데)
+const TAEGEUK_Y = 34, TAEGEUK_R = 9;
+
+/** 별 하나(꼭짓점 5개)의 path 문자열. SVG 와 canvas(Path2D) 가 같이 씁니다. */
+function starPath(cx, cy, r) {
+  let d = "";
+  for (let i = 0; i < 10; i++) {
+    const a = (-90 + i * 36) * Math.PI / 180;
+    const rr = (i % 2 === 0) ? r : r * 0.382;
+    d += (i === 0 ? "M" : "L") + (cx + rr * Math.cos(a)).toFixed(2) +
+         " " + (cy + rr * Math.sin(a)).toFixed(2);
+  }
+  return d + "Z";
+}
+
+// 성조기를 몇 줄/몇 별로 그릴지.
+// 처음에는 "이 크기(화면에서 국기 폭 26px)면 줄이 1px 도 안 되니 뭉갠다"고 보고 줄을
+// 7~9개로 줄였는데, 실제로 1:1 로 찍어서 보니 **13줄(진짜 성조기)이 제일 또렷했습니다.**
+// 브라우저 안티앨리어싱이 얇은 줄을 잘 처리해 주고, 오히려 줄을 줄이면 굵고 조잡해
+// 보입니다. 그래서 가슴 패치는 실제 국기 그대로 갑니다.
+// 명단 표식은 캡처 이미지가 커뮤니티에서 절반 크기로 줄어 보이는 경우가 많아
+// 한 단계 성깁니다.
+const FLAG_SPEC = { chest: { stripes: 13, cols: 6, rows: 5 },   // 유니폼 가슴 패치
+                    tiny:  { stripes: 9,  cols: 3, rows: 3 } }; // 명단 표식(더 작음)
+
+/** 성조기 도형. SVG 와 canvas 가 같은 좌표를 쓰도록 한 곳에서 계산합니다. */
+function usFlagParts(x, y, w, h, spec) {
+  const n = spec.stripes, s = h / n, stripes = [];
+  for (let i = 0; i < n; i += 2) stripes.push({ x, y: y + i * s, w, h: s });
+  // 캔턴은 실제 비율(가로 0.4, 줄 7개분 높이)에 맞춥니다.
+  const cantonRows = Math.max(2, Math.round(n * 7 / 13));
+  const canton = { x, y, w: w * 0.40, h: s * cantonRows };
+  const cw = canton.w / spec.cols, ch = canton.h / spec.rows;
+  const r = Math.min(cw, ch) * 0.44;
+  let stars = "";
+  for (let c = 0; c < spec.cols; c++) {
+    for (let rw = 0; rw < spec.rows; rw++) {
+      stars += starPath(canton.x + cw * (c + 0.5), canton.y + ch * (rw + 0.5), r);
+    }
+  }
+  return { stripes, canton, stars };
+}
+
+function usFlagSVG(x, y, w, h, spec) {
+  const f = usFlagParts(x, y, w, h, spec);
+  return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="#ffffff"/>' +
+    f.stripes.map(r => '<rect x="' + r.x + '" y="' + r.y.toFixed(2) + '" width="' + r.w +
+                       '" height="' + r.h.toFixed(2) + '" fill="' + US_RED + '"/>').join("") +
+    '<rect x="' + f.canton.x + '" y="' + f.canton.y + '" width="' + f.canton.w.toFixed(2) +
+      '" height="' + f.canton.h.toFixed(2) + '" fill="' + US_NAVY + '"/>' +
+    '<path d="' + f.stars + '" fill="#ffffff"/>' +
+    '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h +
+      '" fill="none" stroke="' + US_NAVY + '" stroke-width="1.4"/>';
+}
+
+function drawUSFlag(ctx, x, y, w, h, spec, border) {
+  const f = usFlagParts(x, y, w, h, spec);
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = US_RED;
+  for (const r of f.stripes) ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = US_NAVY;
+  ctx.fillRect(f.canton.x, f.canton.y, f.canton.w, f.canton.h);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill(new Path2D(f.stars));
+  ctx.lineWidth = border; ctx.strokeStyle = US_NAVY;
+  ctx.strokeRect(x, y, w, h);
+}
+
+// ---- 태극 (한국 종목 유니폼의 목 아래 한가운데) ----------------------------
+// 태극기를 통째로 넣으면 이 크기에서 4괘(건곤감리)가 점으로 뭉개져 오히려 지저분해서,
+// 원형 태극만 씁니다(사용자가 "동그란 태극기도 괜찮다"고 함).
+// 빨강 영역 = 위쪽 반원 + 반지름 절반짜리 반원 두 개로 만드는 고전적인 S 자입니다.
+const TAEGEUK_RED = "#CD2E3A", TAEGEUK_BLUE = "#0047A0";
+
+function taegeukRedPath(cx, cy, r) {
+  const h = r / 2;
+  return "M " + (cx - r) + " " + cy +
+         " A " + r + " " + r + " 0 0 1 " + (cx + r) + " " + cy +
+         " A " + h + " " + h + " 0 0 1 " + cx + " " + cy +
+         " A " + h + " " + h + " 0 0 0 " + (cx - r) + " " + cy + " Z";
+}
+
+function taegeukSVG(cx, cy, r) {
+  // 어떤 유니폼 색 위에서도 보이도록 흰 테두리를 두릅니다.
+  return '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r + 1.6) + '" fill="#ffffff"/>' +
+         '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + TAEGEUK_BLUE + '"/>' +
+         '<path d="' + taegeukRedPath(cx, cy, r) + '" fill="' + TAEGEUK_RED + '"/>';
+}
+
+/** 명단 왼쪽에 찍는 네모 태극기 (캡처 이미지 전용이라 canvas 판만 있습니다).
+ *  4괘는 이 크기(캡처에서 26x18px)에서 음/양 끊김이 안 보이므로 막대 3개로
+ *  단순화합니다. 막대 방향은 실제 태극기처럼 중심을 향한 선과 직각입니다. */
+function drawKRFlag(ctx, x, y, w, h) {
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(x, y, w, h);
+  const cx = x + w / 2, cy = y + h / 2;
+  drawTaegeuk(ctx, cx, cy, h * 0.25, 0);
+
+  const L = h * 0.30, t = Math.max(0.8, h * 0.055), gap = t * 0.75;
+  const span = 3 * t + 2 * gap;
+  ctx.fillStyle = "#1a1a1a";
+  for (const [px, py] of [[0.23, 0.24], [0.77, 0.24], [0.23, 0.76], [0.77, 0.76]]) {
+    const gx = x + w * px, gy = y + h * py;
+    ctx.save();
+    ctx.translate(gx, gy);
+    ctx.rotate(Math.atan2(cy - gy, cx - gx));
+    for (let i = 0; i < 3; i++) ctx.fillRect(i * (t + gap) - span / 2, -L / 2, t, L);
+    ctx.restore();
+  }
+  ctx.lineWidth = 1; ctx.strokeStyle = "rgba(15,42,68,0.45)";
+  ctx.strokeRect(x, y, w, h);
+}
+
+function drawTaegeuk(ctx, cx, cy, r, ring) {
+  // ring = 유니폼 위에 얹을 때 필요한 흰 테두리 두께. 흰 바탕(태극기) 위에서는 0.
+  if (ring === undefined) ring = 1.6;
+  if (ring > 0) {
+    ctx.beginPath(); ctx.arc(cx, cy, r + ring, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff"; ctx.fill();
+  }
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = TAEGEUK_BLUE; ctx.fill();
+  ctx.fillStyle = TAEGEUK_RED;
+  ctx.fill(new Path2D(taegeukRedPath(cx, cy, r)));
+}
+
+/** 화면용 유니폼 SVG 문자열. uid 는 clipPath id 충돌을 막기 위한 것. */
+function jerseySVG(kit, weightPct, uid) {
+  const num = fmtNum(weightPct);
+  const fit = fitNumber(num, "%");
+  let inner, numFill, brandTag = "";
+  if (kit.style === "us") {
+    inner =
+      '<rect x="0" y="0" width="100" height="118" fill="' + US_BODY + '"/>' +
+      '<rect x="0" y="0" width="24" height="40" fill="' + US_RED + '"/>' +
+      '<rect x="76" y="0" width="24" height="40" fill="' + US_RED + '"/>' +
+      '<path d="' + COLLAR_PATH + '" fill="' + US_NAVY + '"/>' +
+      usFlagSVG(FLAG.x, FLAG.y, FLAG.w, FLAG.h, FLAG_SPEC.chest);
+    numFill = US_NAVY;
+  } else {
+    inner = '<rect x="0" y="0" width="100" height="118" fill="' + kit.main + '"/>' +
+            // 목 바로 아래 한가운데에 태극 (사용자 요청)
+            taegeukSVG(50, TAEGEUK_Y, TAEGEUK_R);
+    numFill = kit.text;
+    if (kit.brand) {
+      brandTag = '<text x="50" y="60" text-anchor="middle" font-size="12" font-weight="700" ' +
+                 'fill="' + kit.text + '" opacity="0.75">' + escapeHtml(kit.brand.slice(0, 2)) + '</text>';
+    }
+  }
+  return '<svg class="shirt" viewBox="0 0 100 118">' +
+    '<defs><clipPath id="jc' + uid + '"><path d="' + SHIRT_PATH + '"/></clipPath></defs>' +
+    '<g clip-path="url(#jc' + uid + ')">' + inner + '</g>' +
+    '<path d="' + SHIRT_PATH + '" fill="none" stroke="' + kit.dark + '" stroke-width="3"/>' +
+    brandTag +
+    // text-anchor:middle 로 두면 "숫자+%" 묶음이 가운데 정렬되면서 숫자가 왼쪽으로
+    // 밀립니다. 시작점을 직접 계산해 왼쪽 정렬로 찍습니다.
+    '<text x="' + (50 - fit.width / 2).toFixed(2) + '" y="98" font-weight="700" ' +
+      'fill="' + numFill + '">' +
+      '<tspan font-size="' + fit.fs + '">' + escapeHtml(num) + '</tspan>' +
+      '<tspan font-size="' + fit.ps + '">%</tspan></text>' +
+    '</svg>';
+}
+
+/** 이름표 글자 크기(px). 전술판 폭에서 계산합니다.
+ *
+ *  이름표 안쪽 폭 = 카드 폭(전술판의 15%) - 좌우 여백 6px.
+ *  여기에 한글 MAX_LABEL_WIDTH(8.6)자가 들어가야 하므로, 안전값 8.8 로 나눕니다.
+ *  (pitch_kit.MAX_LABEL_WIDTH 를 바꾸면 아래 8.8 도 같이 바꿔야 합니다)
+ *
+ *  왜 고정 px 가 아니라 계산인가: 카드 폭은 %인데 글자만 px 로 박아두면 창이 좁을 때
+ *  -- 특히 휴대폰에서 -- 이름표가 전부 "…" 로 잘립니다. 반대로 큰 화면에서는
+ *  쓸데없이 작게 보입니다.
+ */
+function tagFontPx(pitchWidthPx) {
+  const inner = pitchWidthPx * 0.15 - 6;
+  const fs = inner / 8.8;
+  return Math.max(7, Math.min(11.5, fs)) * (document.body.classList.contains("compact") ? 0.9 : 1);
+}
+
+function applyTagFont() {
+  const pw = pitch.getBoundingClientRect().width;
+  if (pw > 0) pitch.style.setProperty("--tagfs", tagFontPx(pw).toFixed(2) + "px");
+}
+
+function defaultKit(market) {
+  return market === "US"
+    ? { style: "us", brand: "", main: US_BODY, dark: US_NAVY, text: US_NAVY }
+    : { style: "solid", brand: "", main: "#8E99A6", dark: "#4A535C", text: "#FFFFFF" };
+}
+
+// 담은 게 없을 때와 있을 때, 아래 안내 문구가 달라야 합니다. 카드가 하나도 없는데
+// "카드를 잡아 끌어놓으세요" 라고 하면 끌 게 없어서 무슨 말인지 모릅니다.
+const HINT_DRAG = "카드를 잡아 포지션 슬롯에 놓으면 스냅됩니다. "
+  + "다른 종목이 있으면 자리를 맞바꿉니다. 클릭하면 오른쪽에 상세정보가 열립니다.";
+const HINT_EMPTY = "점선은 아직 비어 있는 자리입니다. 종목을 담으면 여기에 놓입니다.";
+
+function render() {
+  applyTagFont();
+  pitch.querySelectorAll(".slot, .card").forEach(el => el.remove());
+
+  // 텅 빈 초록 화면은 "고장난 건가?" 로 읽힙니다. 뭘 하면 되는지 보여줍니다.
+  const isEmpty = players.length === 0;
+  const emptyEl = document.getElementById("empty");
+  if (emptyEl) emptyEl.style.display = isEmpty ? "flex" : "none";
+  const hintEl = document.getElementById("hint");
+  if (hintEl) hintEl.textContent = isEmpty ? HINT_EMPTY : HINT_DRAG;
+
+  for (const s of slots) {
+    const el = document.createElement("div");
+    el.className = "slot";
+    el.dataset.slot = s.id;
+    el.style.left = (s.x * 100) + "%";
+    el.style.top = (s.y * 100) + "%";
+    el.textContent = s.label;
+    pitch.appendChild(el);
+  }
+
+  let uid = 0;
+  for (const p of players) {
+    const s = slotById(p.slot) || nearestSlot(0.5, 0.5);
+    const el = document.createElement("div");
+    // 말풍선이 전술판 밖으로 나가 잘리지 않도록, 위쪽 줄은 아래로 띄웁니다.
+    el.className = "card" + (p.id === selectedId ? " selected" : "")
+                 + (s.y < 0.5 ? " tip-down" : " tip-up");
+    el.dataset.id = p.id;
+    el.style.left = (s.x * 100) + "%";
+    el.style.top = (s.y * 100) + "%";
+    const fullName = p.display_name || p.ticker || p.label;
+    el.innerHTML =
+      jerseySVG(p.kit, p.weight_pct, uid++) +
+      (p.captain ? '<span class="cap" title="지금 가장 많이 들고 있는 종목">C</span>' : '') +
+      (p.has_warning ? '<span class="warn" title="확인 필요"></span>' : '') +
+      '<div class="tag" style="background:' + p.kit.dark + ';color:#fff">' +
+        escapeHtml(p.label) + '</div>' +
+      '<div class="tip">' + escapeHtml(fullName) + ' · 내 ETF 자산의 ' +
+        fmtPct(p.weight_pct) + '</div>';
+    attachDrag(el, p);
+    pitch.appendChild(el);
+  }
+  reportHeight();
+}
+
+function setHot(slotId) {
+  pitch.querySelectorAll(".slot").forEach(el => {
+    el.classList.toggle("hot", el.dataset.slot === slotId);
+  });
+}
+
+function attachDrag(el, p) {
+  let dragging = false, moved = false, sx = 0, sy = 0;
+
+  el.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    dragging = true; moved = false;
+    sx = e.clientX; sy = e.clientY;
+    el.setPointerCapture(e.pointerId);
+    el.classList.add("dragging");
+  });
+
+  el.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    if (Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) > 3) moved = true;
+    const pr = pitch.getBoundingClientRect();
+    const nx = clamp((e.clientX - pr.left) / pr.width, 0, 1);
+    const ny = clamp((e.clientY - pr.top) / pr.height, 0, 1);
+    el.style.left = (nx * 100) + "%";
+    el.style.top = (ny * 100) + "%";
+    const ns = nearestSlot(nx, ny);
+    setHot(ns ? ns.id : null);
+  });
+
+  function endDrag(e) {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove("dragging");
+    try { el.releasePointerCapture(e.pointerId); } catch (_) {}
+    setHot(null);
+    selectedId = p.id;
+
+    if (moved) {
+      const pr = pitch.getBoundingClientRect();
+      const nx = clamp((e.clientX - pr.left) / pr.width, 0, 1);
+      const ny = clamp((e.clientY - pr.top) / pr.height, 0, 1);
+      const target = nearestSlot(nx, ny);
+      if (target && target.id !== p.slot) {
+        const origin = p.slot;
+        const occupant = players.find(q => q.id !== p.id && q.slot === target.id);
+        p.slot = target.id;
+        if (occupant) occupant.slot = origin;   // 스왑
+      }
+    }
+    render();
+    emit();
+  }
+  el.addEventListener("pointerup", endDrag);
+  el.addEventListener("pointercancel", endDrag);
+}
+
+// =====================================================================
+// 캡처(스크린샷 아님)
+// ---------------------------------------------------------------------
+// 현재 players/slots/summary 를 그대로 canvas 에 다시 그려서 PNG 로 만든 뒤
+// 클립보드에 복사합니다. html2canvas 같은 외부 라이브러리 없이, 이미 갖고 있는
+// SVG(라인)와 카드 좌표/텍스트 데이터를 재사용하므로 항상 실제 배치와 일치합니다.
+//
+// 전술판만 찍으면 "그래서 얼마 버는데?" 가 안 보여서, 커뮤니티에 올려도 감이
+// 안 온다는 피드백이 있었습니다. 그래서 아래를 함께 굽습니다(사용자 요청):
+//   요약 띠(총 원금/월평균 분배금/연 분배금/원금 대비) + 고지 + 종목 명단 + 주소
+// 종목 명단이 있어야 카드에 짧게 줄여 쓴 이름의 정식 명칭이 보증됩니다.
+// =====================================================================
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// ⚠️ 화면(CSS)과 **글자 하나까지 똑같은** 글꼴 목록이어야 합니다.
+// 예전에는 캡처 쪽만 "Segoe UI" 가 빠져 있어서, 영문·숫자가 맑은 고딕으로 잡히며
+// 화면보다 넓게 그려졌고, 화면에서는 멀쩡한 이름표가 캡처에서만 "…" 로 잘렸습니다.
+const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", ' +
+             '"Malgun Gothic", "Apple SD Gothic Neo", Roboto, sans-serif';
+
+/** canvas 에 유니폼 한 벌. (cx, topY) 기준, 폭 w. SVG 와 같은 도형입니다. */
+function drawJersey(ctx, cx, topY, w, kit, weightPct) {
+  const k = w / 100;
+  ctx.save();
+  ctx.translate(cx - w / 2, topY);
+  ctx.scale(k, k);
+
+  const shirt = new Path2D(SHIRT_PATH);
+  ctx.save();
+  ctx.clip(shirt);
+  let numFill;
+  if (kit.style === "us") {
+    ctx.fillStyle = US_BODY; ctx.fillRect(0, 0, 100, 118);
+    ctx.fillStyle = US_RED;  ctx.fillRect(0, 0, 24, 40); ctx.fillRect(76, 0, 24, 40);
+    ctx.fillStyle = US_NAVY; ctx.fill(new Path2D(COLLAR_PATH));
+    drawUSFlag(ctx, FLAG.x, FLAG.y, FLAG.w, FLAG.h, FLAG_SPEC.chest, 1.4);
+    numFill = US_NAVY;
+  } else {
+    ctx.fillStyle = kit.main; ctx.fillRect(0, 0, 100, 118);
+    drawTaegeuk(ctx, 50, TAEGEUK_Y, TAEGEUK_R);
+    numFill = kit.text;
+  }
+  ctx.restore();
+
+  ctx.lineWidth = 3; ctx.strokeStyle = kit.dark; ctx.stroke(shirt);
+
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  if (kit.style !== "us" && kit.brand) {
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = kit.text;
+    ctx.font = 'bold 12px ' + FONT;
+    ctx.fillText(kit.brand.slice(0, 2), 50, 60);
+    ctx.globalAlpha = 1;
+  }
+  // 등번호 + % : 화면(jerseySVG)과 **같은 fitNumber** 를 써야 캡처만 다르게 잘리지 않습니다.
+  const numTxt = fmtNum(weightPct);
+  const fit = fitNumber(numTxt, "%");
+  const startX = 50 - fit.width / 2;
+  ctx.textAlign = "left";
+  ctx.fillStyle = numFill;
+  ctx.font = `bold ${fit.fs}px ${FONT}`;
+  ctx.fillText(numTxt, startX, 98);
+  ctx.font = `bold ${fit.ps}px ${FONT}`;
+  ctx.fillText("%", startX + fit.numWidth, 98);
+  ctx.textAlign = "center";
+
+  ctx.restore();
+}
+
+/** 폭에 안 들어가면 끝을 … 로 줄입니다. */
+function fitText(ctx, text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
+  return s + "…";
+}
+
+async function buildPitchCanvas() {
+  const pr = pitch.getBoundingClientRect();
+  const scale = 2;                       // 고해상도로 캡처
+  const barH = 26;                       // 상/하단 바 높이(CSS px 기준)
+  const pad = 12 * scale;
+  const W = Math.round(pr.width * scale);
+  const barPx = Math.round(barH * scale);
+  const pitchH = Math.round(pr.height * scale);
+
+  // 아래에 붙일 요약/명단 높이를 미리 계산
+  const stripH   = summary && summary.cells && summary.cells.length ? 52 * scale : 0;
+  const noteH    = (summary && summary.note) ? 19 * scale : 0;
+  const keyH     = (summary && summary.key_note) ? 18 * scale : 0;
+  const rowH     = 23 * scale;     // 글씨를 키운 만큼 줄 높이도 같이 키움
+  const legendH  = legend.length ? (legend.length * rowH + 8 * scale) : 0;
+  const footH    = footer ? 26 * scale : 0;
+  const extra    = (stripH ? stripH + 9 * scale : 0) + noteH + keyH + legendH + footH;
+  const H = barPx * 2 + pitchH + extra + (extra ? 8 * scale : 0);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, H);
+
+  // 상/하단 바 텍스트
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = `bold ${13 * scale}px ${FONT}`;
+  ctx.fillStyle = "#b23b3b";
+  ctx.fillText("▲ 공격 방향 (상대 골문)", W / 2, barPx / 2);
+  ctx.fillStyle = "#1f6f3a";
+  ctx.fillText("🏠 우리 진영 · 골키퍼 ▼", W / 2, barPx + pitchH + barPx / 2);
+
+  // 잔디 스트라이프
+  const stripeH = pitchH * 0.072;
+  let i = 0;
+  for (let y = barPx; y < barPx + pitchH; y += stripeH, i++) {
+    ctx.fillStyle = (i % 2 === 0) ? "#2f8f3f" : "#2b8639";
+    ctx.fillRect(0, y, W, Math.min(stripeH, barPx + pitchH - y));
+  }
+
+  // 라인(SVG)을 이미지로 변환해 그대로 그려넣기.
+  // svg 의 stroke/fill 은 CSS 변수(var(--line))를 쓰는데, 이 SVG 를 문자열로 뽑아
+  // 독립된 data URI 이미지로 불러오면 원본 문서의 CSS 변수에 접근할 수 없어
+  // stroke 가 전부 사라집니다. 그래서 실제 계산된 색상값으로 미리 치환합니다.
+  const svgEl = document.getElementById("svg");
+  const lineColor = getComputedStyle(document.documentElement).getPropertyValue("--line").trim();
+  let svgData = new XMLSerializer().serializeToString(svgEl);
+  svgData = svgData.replaceAll("var(--line)", lineColor || "rgba(255,255,255,0.78)");
+  const svgUrl = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+  const svgImg = new Image();
+  await new Promise((resolve, reject) => {
+    svgImg.onload = resolve; svgImg.onerror = reject; svgImg.src = svgUrl;
+  });
+  ctx.drawImage(svgImg, 0, barPx, W, pitchH);
+
+  // ---- 유니폼 카드 ----
+  const cardW = W * 0.15;
+  const jerseyW = cardW * 0.62;
+  const jerseyH = jerseyW * SHIRT_RATIO;
+  // 이름표 글자/높이는 화면과 똑같은 계산을 씁니다. 다르게 두면 화면에서는 멀쩡한
+  // 이름표가 캡처에서만 잘립니다(예전에 글꼴 목록이 달라서 실제로 그랬습니다).
+  const tagFs = tagFontPx(pr.width) * scale;
+  const tagH = Math.round(tagFs * 1.34 + 5 * scale);
+  const totalH = jerseyH + 2 * scale + tagH;
+  for (const p of players) {
+    const s = slotById(p.slot) || nearestSlot(0.5, 0.5);
+    const cx = s.x * W, cy = barPx + s.y * pitchH;
+    const topY = cy - totalH / 2;
+    drawJersey(ctx, cx, topY, jerseyW, p.kit, p.weight_pct);
+
+    // 주장 완장. 화면(.card .cap)과 **같은 자리, 같은 색**이어야 합니다. 캡처에만
+    // 없으면 공유한 그림이 화면과 달라 보입니다.
+    if (p.captain) {
+      const capW = 11 * scale, capH = 8 * scale;
+      const capX = cx - jerseyW / 2, capY = topY + 1 * scale;
+      ctx.fillStyle = "#E8C34A";
+      roundRect(ctx, capX, capY, capW, capH, 2 * scale);
+      ctx.fill();
+      ctx.fillStyle = "#3a2c05";
+      ctx.font = `800 ${6.5 * scale}px ${FONT}`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("C", capX + capW / 2, capY + capH / 2 + 0.3 * scale);
+    }
+
+    // 이름표
+    const tagY = topY + jerseyH + 2 * scale;
+    ctx.fillStyle = p.kit.dark;
+    roundRect(ctx, cx - cardW / 2, tagY, cardW, tagH, 4 * scale);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold ${tagFs}px ${FONT}`;           // 화면 .tag 와 같은 크기
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(fitText(ctx, p.label, cardW - 6 * scale), cx, tagY + tagH / 2 + 0.5 * scale);
+  }
+
+  // ---- 아래 요약 ----
+  let y = barPx + pitchH + barPx + (extra ? 8 * scale : 0);
+
+  if (stripH) {
+    ctx.strokeStyle = "rgba(15,42,68,0.10)";
+    ctx.lineWidth = 1 * scale;
+    roundRect(ctx, pad, y, W - pad * 2, stripH, 10 * scale);
+    ctx.fillStyle = "rgba(15,42,68,0.022)"; ctx.fill(); ctx.stroke();
+
+    const cells = summary.cells;
+    const cw = (W - pad * 2) / cells.length;
+    cells.forEach((c, idx) => {
+      const cx = pad + cw * idx + cw / 2;
+      if (idx > 0) {
+        ctx.beginPath();
+        ctx.moveTo(pad + cw * idx, y + 8 * scale);
+        ctx.lineTo(pad + cw * idx, y + stripH - 8 * scale);
+        ctx.strokeStyle = "rgba(15,42,68,0.08)"; ctx.stroke();
+      }
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = "rgba(15,42,68,0.55)";
+      ctx.font = `bold ${10 * scale}px ${FONT}`;
+      ctx.fillText(fitText(ctx, c.k, cw - 6 * scale), cx, y + stripH * 0.32);
+      ctx.fillStyle = "rgba(15,42,68,0.92)";
+      ctx.font = `bold ${15 * scale}px ${FONT}`;
+      ctx.fillText(fitText(ctx, c.v, cw - 6 * scale), cx, y + stripH * 0.68);
+    });
+    y += stripH + 9 * scale;
+  }
+
+  if (noteH) {
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(176,116,20,1)";
+    ctx.font = `${11.5 * scale}px ${FONT}`;
+    ctx.fillText(summary.note, W / 2, y + noteH / 2);
+    y += noteH;
+  }
+  if (keyH) {
+    ctx.fillStyle = "rgba(15,42,68,0.62)";
+    ctx.font = `${11 * scale}px ${FONT}`;
+    ctx.fillText(summary.key_note, W / 2, y + keyH / 2);
+    y += keyH;
+  }
+
+  if (legendH) {
+    y += 8 * scale;
+    for (const item of legend) {
+      // 표식 자리 폭은 미국/한국 상관없이 같게 잡아야 종목 이름이 세로로 줄 맞습니다.
+      const slotW = 13 * scale;
+      const swX = pad + 2 * scale;
+      // 어느 나라 상품인지 국기로 바로 보이게 합니다. 운용사(TIGER/KODEX)는
+      // 어차피 정식 이름 맨 앞에 그대로 나오므로 색 네모는 필요 없습니다(사용자 요청).
+      const fh = 9 * scale;
+      if (item.us) {
+        // 명단은 커뮤니티에서 이미지가 줄어 보이는 일이 많아 한 단계 성긴 spec.
+        drawUSFlag(ctx, swX, y + (rowH - fh) / 2, slotW, fh, FLAG_SPEC.tiny, 1 * scale);
+      } else {
+        drawKRFlag(ctx, swX, y + (rowH - fh) / 2, slotW, fh);
+      }
+
+      ctx.textBaseline = "middle";
+      ctx.font = `${12.5 * scale}px ${FONT}`;
+      ctx.fillStyle = "rgba(15,42,68,0.82)";
+      ctx.textAlign = "right";
+      const amtW = ctx.measureText(item.amount).width;
+      ctx.fillText(item.amount, W - pad - 2 * scale, y + rowH / 2);
+
+      ctx.textAlign = "left";
+      ctx.font = `${13 * scale}px ${FONT}`;
+      ctx.fillStyle = "rgba(15,42,68,0.95)";
+      const nameX = swX + slotW + 6 * scale;
+      const nameMax = (W - pad - 2 * scale) - amtW - 10 * scale - nameX;
+      ctx.fillText(fitText(ctx, item.name, nameMax), nameX, y + rowH / 2);
+
+      ctx.beginPath();
+      ctx.moveTo(pad, y + rowH); ctx.lineTo(W - pad, y + rowH);
+      ctx.lineWidth = 1 * scale; ctx.strokeStyle = "rgba(15,42,68,0.06)"; ctx.stroke();
+      y += rowH;
+    }
+  }
+
+  if (footH) {
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(15,42,68,0.50)";
+    ctx.font = `${10 * scale}px ${FONT}`;
+    ctx.fillText(footer, W / 2, y + footH / 2 + 2 * scale);
+  }
+
+  return canvas;
+}
+
+async function captureAndCopy() {
+  const btn = document.getElementById("captureBtn");
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "캡처 중…";
+  try {
+    const canvas = await buildPitchCanvas();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("이미지 생성 실패");
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      btn.textContent = "✅ 복사됨";
+    } catch (clipErr) {
+      // 클립보드 권한이 없는 브라우저/환경 -> 새 탭에 이미지를 열어 수동 저장하게 폴백
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      btn.textContent = "새 탭에 열림";
+    }
+  } catch (e) {
+    console.error("캡처 실패:", e);
+    btn.textContent = "❌ 실패";
+  } finally {
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1800);
+  }
+}
+
+/** 💾 저장 -- PNG 파일로 내려받기.
+ *
+ *  왜 필요한가: 네이버 카페·블로그 댓글처럼 **파일 첨부만 되는 곳**이 많습니다.
+ *  클립보드 복사(📸)는 글쓰기 창에 바로 붙여넣을 수 있는 곳에서만 통합니다.
+ *
+ *  ⚠️ 저장 위치는 고를 수 없습니다. 브라우저 보안상 웹페이지는 "바탕화면에 저장"
+ *  같은 걸 시킬 수 없고, 무조건 그 브라우저의 다운로드 폴더로 갑니다
+ *  (사용자가 브라우저 설정에서 "다운로드 위치를 항상 묻기"를 켜 두었다면 그때만
+ *  창이 뜹니다). 그래서 버튼 이름을 "바탕화면 저장"이라고 달면 안 됩니다.
+ *
+ *  모바일: 안드로이드 크롬은 그대로 내려받습니다. 아주 오래된 iOS 사파리는
+ *  download 속성을 무시하므로, 그 경우에는 새 탭으로 열어 길게 눌러 저장하게 합니다.
+ */
+async function captureAndSave() {
+  const btn = document.getElementById("saveBtn");
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "저장 중…";
+  try {
+    const canvas = await buildPitchCanvas();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("이미지 생성 실패");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    if (typeof a.download === "undefined") {
+      window.open(url, "_blank");                 // 구형 iOS: 길게 눌러 저장
+      btn.textContent = "새 탭에 열림";
+    } else {
+      a.href = url;
+      a.download = captureFilename || "etf-manager.png";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      btn.textContent = "✅ 저장됨";
+    }
+    // 곧바로 revoke 하면 다운로드가 시작되기 전에 주소가 사라질 수 있습니다.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) {
+    console.error("저장 실패:", e);
+    btn.textContent = "❌ 실패";
+  } finally {
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1800);
+  }
+}
+
+/** 📋 텍스트 -- 포트폴리오를 글자로 클립보드에 복사.
+ *
+ *  네이버 댓글처럼 이미지 첨부가 아예 안 되는 곳에서 씁니다.
+ *  글자 복사는 이미지와 달리 execCommand 폴백이 잘 통해서, 클립보드 권한이 막힌
+ *  브라우저에서도 대부분 성공합니다.
+ */
+async function copyCommentText() {
+  const btn = document.getElementById("textBtn");
+  const original = btn.textContent;
+  if (!commentText) return;
+  btn.disabled = true;
+  try {
+    try {
+      await navigator.clipboard.writeText(commentText);
+    } catch (err) {
+      // 권한이 없는 브라우저: 화면 밖 textarea 를 만들어 옛 방식으로 복사
+      const ta = document.createElement("textarea");
+      ta.value = commentText;
+      ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:absolute;left:-9999px;top:0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      if (!ok) throw err;
+    }
+    btn.textContent = "✅ 복사됨";
+  } catch (e) {
+    console.error("텍스트 복사 실패:", e);
+    btn.textContent = "❌ 실패";
+  } finally {
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1800);
+  }
+}
+
+document.getElementById("textBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  copyCommentText();
+});
+document.getElementById("captureBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  captureAndCopy();
+});
+document.getElementById("saveBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  captureAndSave();
+});
+
+Streamlit.onRender((args) => {
+  slots = Array.isArray(args.slots) ? args.slots.map(s => ({
+    id: String(s.id), row: s.row, col: s.col,
+    x: Number(s.x), y: Number(s.y), label: s.label || "", group: s.group || "",
+  })) : slots;
+
+  const incoming = Array.isArray(args.players) ? args.players : [];
+  players = incoming.map(p => ({
+    id: String(p.id),
+    ticker: p.ticker || "",
+    display_name: p.display_name || "",
+    market: p.market || "US",
+    // 이름표 글자. 파이썬(pitch_kit.py)이 줄여서 내려줍니다.
+    label: p.label || p.display_name || p.ticker || "",
+    kit: p.kit || defaultKit(p.market || "US"),
+    weight_pct: (p.weight_pct === null || p.weight_pct === undefined) ? null : Number(p.weight_pct),
+    slot: String(p.slot || ""),
+    has_warning: !!p.has_warning,
+    captain: !!p.captain,
+  }));
+  selectedId = (args.selected_id === undefined) ? selectedId : args.selected_id;
+
+  summary = args.summary || null;
+  legend = Array.isArray(args.legend) ? args.legend : [];
+  footer = args.footer || "";
+  captureFilename = args.capture_filename || "";
+  commentText = args.comment_text || "";
+  document.getElementById("textBtn").style.display = commentText ? "" : "none";
+
+  // 레이아웃 실험용: 전술판 세로 길이(세로/가로 비율)와 컴팩트 폰트 모드
+  const aspect = Number(args.aspect_ratio) || (96 / 72);
+  document.getElementById("pitch").style.aspectRatio = "1 / " + aspect;
+  document.body.classList.toggle("compact", !!args.compact);
+
+  render();
+});
+
+Streamlit.ready();
+window.addEventListener("resize", () => { applyTagFont(); reportHeight(); });
+setTimeout(reportHeight, 60);
+</script>
+</body>
+</html>

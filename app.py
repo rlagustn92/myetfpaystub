@@ -25,6 +25,8 @@ import streamlit as st
 
 import config
 import formatting as F
+from components import pitch_grid
+from components.football_pitch import football_pitch
 from components.local_store import local_store
 from components.ui import (
     header,
@@ -43,8 +45,10 @@ from services import (
     distribution_service as DS,
     fx_service,
     naver_link_service,
+    pitch_service,
     portfolio_service as PS,
     search_service,
+    share_service,
     storage_service as STORE,
     visitor_service,
 )
@@ -250,7 +254,87 @@ def render_home() -> None:
             + (f" · {places}개 계좌에 나눠 보유" if places > 1 else ""),
             F.won(v) if v is not None else config.NO_DATA_TEXT,
             F.won_signed(profit) if profit is not None else "",
+            # 차트·뉴스처럼 이 앱이 안 만드는 건 네이버 증권으로 넘깁니다.
+            # 주소를 못 찾으면 링크를 안 그립니다(빈 페이지로 보내지 않으려고).
+            link=naver_link_service.url_for(g.market, g.ticker) or "",
         )
+
+    st.write("")
+    render_pitch(this_month, year)
+
+
+# =====================================================================
+# 5-1. 전술판 — 내가 가진 걸 한 장의 그림으로
+# =====================================================================
+def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None:
+    """축구 전술판 위에 내 보유 ETF 를 세웁니다.
+
+    등번호는 **내 ETF 자산에서 그 종목이 차지하는 비율**입니다. 사용자가 비중을
+    입력하는 게 아니라 수량 × 현재가로 저절로 정해집니다.
+
+    자리는 끌어서 바꿀 수 있고, 바꾼 자리는 저장 파일에 같이 남습니다.
+    이건 평가나 추천이 아니라 **내가 가진 걸 한눈에 보는 그림**일 뿐입니다.
+    """
+    section("⚽ 내 포트폴리오 전술판",
+            "유니폼 숫자 = 내 ETF 자산에서 그 종목이 차지하는 비율 · "
+            "흰 유니폼 = 미국 종목 · C = 지금 가장 많이 들고 있는 종목. "
+            "카드를 끌어다 자리를 바꿀 수 있습니다.")
+
+    groups = PS.group_by_ticker(summary)
+    pitch_service.prune_slots(portfolio)          # 판 종목의 자리를 비웁니다
+    pitch_service.ensure_slots(portfolio, groups)  # 새 종목에 자리를 줍니다
+    payload = pitch_service.build_players(summary, portfolio, groups)
+
+    # 📸 이미지와 📋 텍스트는 **같은 줄**에서 만듭니다. 따로 만들면 같은
+    # 포트폴리오를 두 군데 올렸을 때 숫자가 어긋나 보입니다.
+    month_label = f"{today.month}월"
+    rows = pitch_service.share_rows(summary, groups, this_month)
+
+    capture_summary = {
+        "cells": [
+            {"k": "내 ETF 자산", "v": F.won_short(summary.total_value_krw)},
+            {"k": f"{month_label} ETF 월급", "v": F.won_short(this_month.amount_krw)},
+            {"k": f"{today.year}년 누적", "v": F.won_short(year_total.amount_krw)},
+            {"k": "세금 계산 기준", "v": F.won_short(year_total.tax_basis_krw)},
+        ],
+        "note": f"※ 참고용 · 실제 입금액·세금은 증권사 내역과 다를 수 있음 · "
+                f"{today:%Y-%m-%d} 기준",
+        "key_note": "유니폼 숫자 = 내 ETF 자산에서 차지하는 비율 · 흰 유니폼 = 미국 종목",
+    }
+    capture_legend = [
+        {"name": r.name, "amount": r.amount_text(month_label),
+         "color": r.color, "us": r.is_us}
+        for r in rows
+    ]
+    comment = share_service.comment_text(
+        portfolio_name=portfolio.name, rows=rows,
+        total_value_krw=summary.total_value_krw,
+        month_krw=this_month.amount_krw, month_label=month_label,
+        year_krw=year_total.amount_krw, year_tax_basis_krw=year_total.tax_basis_krw,
+        today=today,
+    )
+
+    # 전술판은 세로로 긴 그림이라 화면 전체 폭을 쓰면 너무 커집니다. 가운데로 모읍니다.
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid:
+        result = football_pitch(
+            players=payload.players,
+            slots=pitch_grid.slot_meta(),
+            height=760,
+            summary=capture_summary,
+            legend=capture_legend,
+            footer=f"{config.APP_ICON} {config.APP_NAME} v{config.APP_VERSION}",
+            capture_filename=f"내_ETF_전술판_{today:%Y%m%d}.png",
+            comment_text=comment,
+            key="pitch",
+        )
+
+    if result and pitch_service.apply_assignments(portfolio, result.get("assignments") or {}):
+        st.rerun()
+
+    if payload.unpriced:
+        note(f"※ {', '.join(payload.unpriced)} 은(는) 지금 가격을 확인하지 못해 "
+             f"등번호를 비워 두었습니다. 0% 라는 뜻이 아닙니다.")
 
 
 # =====================================================================
