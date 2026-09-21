@@ -95,6 +95,9 @@ streamlit run app.py         # 로컬 실행
 - **KIWOOM(키움)은 과세표준을 공개하지만 붙이지 못했습니다.** 그 서버가 TLS 중간
   인증서를 안 보내서 파이썬에서 검증이 실패합니다. `verify=False` 로 끄지 마세요.
   자세한 건 docs/DATA_SOURCES.md §2-8.
+- **`pitch_service.tidy()`(⚽ 포지션 자동 정리)는 버튼에서만 부릅니다.** 화면을
+  열 때 자동으로 부르면 사용자가 손으로 끌어다 맞춘 배치가 말없이 흐트러집니다.
+  화면을 열 때 도는 것은 `ensure_slots`(자리 **없는** 종목만 채움)입니다.
 - **전술판 자리는 보유 줄이 아니라 종목(티커)에 붙습니다.** 같은 ETF 를 세 계좌에
   나눠 가져도 카드는 하나만 섭니다. `Portfolio.slots` 의 열쇠는 `"KR:069500"` 형태.
 - **화면과 📸 캡처는 여백을 쌓는 방식이 달라서, 같은 간격을 내려면 숫자가 달라집니다.**
@@ -241,7 +244,7 @@ tests/                     pytest
 | 운용사 추가 | `data/providers/issuer/` 에 파일 추가 + `registry.KR_ISSUERS` 에 한 줄 |
 | 시세 소스 교체 | `data/providers/price_provider.py` 의 `get_price_provider` |
 | 색·카드 모양 | `components/ui.py` |
-| 전술판 자리 배치·등번호 | `services/pitch_service.py` |
+| 전술판 자리 배치·등번호·자동 정리 | `services/pitch_service.py` |
 | 전술판 모양·캡처 이미지 | `components/football_pitch/frontend/index.html` |
 | 유니폼 색 / 이름 축약 | `components/pitch_kit.py` |
 | 스킨 추가·색 | `components/skins.py` (데이터만 추가하면 끝) |

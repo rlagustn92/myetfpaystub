@@ -223,3 +223,26 @@ def test_amount_boxes_reset_when_a_different_stock_is_picked(offline, fake_searc
     assert [t for t in at.text_input if "얼마에 샀나요" in t.label][0].value == ""
     assert [t for t in at.text_input if "어떤 ETF" in t.label][0].value == ""
     assert [s for s in at.selectbox if "어디에" in s.label][0].value == broker_before
+
+
+def test_tidy_button_rearranges_the_pitch(offline, fake_search):
+    """⚽ 포지션 자동 정리는 **눌렀을 때만** 움직여야 합니다. 화면을 열 때마다
+    자동으로 정리하면 손으로 맞춰둔 배치가 말없이 흐트러집니다."""
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    [b for b in at.button if "예시" in b.label][0].click().run()
+
+    tidy = [b for b in at.button if "자동 정리" in b.label]
+    assert tidy, "전술판에 자동 정리 버튼이 없습니다"
+
+    # 채권을 손으로 최전방에 올려두고, 다시 그려도 그대로인지 봅니다.
+    p = at.session_state["store"].active()
+    key = next(iter(p.slots))
+    p.slots[key] = "ST-L"
+    at.run()
+    assert at.session_state["store"].active().slots[key] == "ST-L", \
+        "버튼을 안 눌렀는데 자리가 바뀌었습니다"
+
+    [b for b in at.button if "자동 정리" in b.label][0].click().run()
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "지금 배치" in text          # 포메이션 안내가 보입니다

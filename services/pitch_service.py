@@ -104,6 +104,76 @@ def ensure_slots(portfolio: Portfolio, groups: list[TickerGroup]) -> bool:
     return changed
 
 
+# 라인을 축구식 세 덩어리로 묶습니다 (골키퍼는 수비에 넣습니다).
+_GROUP_ROWS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("공격", ("ST", "AM")),
+    ("미드필드", ("MC", "DM")),
+    ("수비", ("DF", "GK")),
+)
+
+
+def tidy(portfolio: Portfolio, groups: list[TickerGroup]) -> int:
+    """종목 성격에 맞는 라인으로 **전부 다시** 배치합니다. 옮긴 종목 수를 돌려줍니다.
+
+    `ensure_slots` 와 뭐가 다른가
+    -----------------------------
+    `ensure_slots` 는 **자리가 없는 종목에만** 자리를 줍니다(화면을 열 때마다
+    자동으로 불립니다). `tidy` 는 이미 자리가 있는 종목까지 싹 다시 놓습니다.
+
+    ⚠ **버튼을 눌렀을 때만 부르세요.** 자동으로 부르면 사용자가 손으로 끌어다
+      맞춰둔 배치가 말도 없이 흐트러집니다. 그건 화가 나는 일입니다.
+
+    평가금액이 큰 종목부터 놓아서 큰 종목이 중앙을 차지하게 합니다
+    (`first_free_slot` 이 중앙부터 채웁니다). 한 라인이 꽉 차면 이웃 라인으로
+    밀려나는 것도 거기서 알아서 합니다.
+    """
+    before = dict(portfolio.slots)
+    used: set[str] = set()
+    for g in groups:                                  # 이미 평가금액 큰 순
+        key = ticker_key(g.market, g.ticker)
+        row = guess_row(g.market, g.ticker, g.name)
+        spot = pitch_grid.first_free_slot(used, preferred_row=row)
+        if spot is None:
+            # 26자리가 다 찼습니다. 자리를 비워 둬야 다른 종목과 겹치지 않습니다
+            # (판에 못 서는 종목은 build_players 가 no_slot 으로 알려줍니다).
+            portfolio.slots.pop(key, None)
+            continue
+        portfolio.slots[key] = spot
+        used.add(spot)
+    keys = set(before) | set(portfolio.slots)
+    return sum(1 for k in keys if before.get(k) != portfolio.slots.get(k))
+
+
+def formation_counts(portfolio: Portfolio) -> dict[str, int]:
+    """지금 **실제로 놓인 자리** 기준으로 공격/미드필드/수비에 몇 개인가.
+
+    종목 성격이 아니라 놓인 자리를 셉니다 — 사용자가 손으로 옮겼으면 그게
+    사용자의 뜻이고, 그대로 세는 게 맞습니다.
+    """
+    out = {name: 0 for name, _ in _GROUP_ROWS}
+    for slot in portfolio.slots.values():
+        if not pitch_grid.is_slot(slot):
+            continue
+        row = pitch_grid.split(slot)[0]
+        for name, rows in _GROUP_ROWS:
+            if row in rows:
+                out[name] += 1
+                break
+    return out
+
+
+def formation(portfolio: Portfolio) -> str:
+    """축구식 표기. 뒤에서부터 수비-미드필드-공격 (예: "1-2-1").
+
+    0 이 들어가도 그대로 씁니다 — "0-0-4" 는 **전부 공격에 몰려 있다**는 뜻이고,
+    그걸 보여주는 게 이 표기의 쓸모입니다. 숨기면 볼 이유가 없어집니다.
+    """
+    c = formation_counts(portfolio)
+    if sum(c.values()) == 0:
+        return ""
+    return f"{c['수비']}-{c['미드필드']}-{c['공격']}"
+
+
 def prune_slots(portfolio: Portfolio) -> bool:
     """더 이상 갖고 있지 않은 종목의 자리를 비웁니다. 바뀐 게 있으면 True.
 

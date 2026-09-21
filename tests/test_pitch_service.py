@@ -237,3 +237,97 @@ def test_more_tickers_than_slots_is_reported_not_silently_piled_up():
     payload = pitch_service.build_players(s, p, groups)
     assert len(p.slots) == len(pitch_grid.all_slots())
     assert len(payload.no_slot) == 3
+
+
+# ------------------------------------------------ ⚽ 포지션 자동 정리
+def _folio_with(*specs):
+    """(market, ticker, name, value) 들로 포트폴리오와 그룹을 만듭니다."""
+    p = Portfolio()
+    groups = []
+    for mk, tk, nm, val in specs:
+        p.add(Holding(ticker=tk, market=mk, name=nm, broker="증권사", account="일반",
+                      shares=1, avg_price=val))
+        groups.append(_Group(mk, tk, nm, val))
+    groups.sort(key=lambda g: -g.value)            # 평가금액 큰 순 (실제와 같게)
+    return p, groups
+
+
+class _Group:
+    """TickerGroup 대신 쓰는 최소한의 그릇 (tidy 가 보는 것만 들고 있습니다)."""
+
+    def __init__(self, market, ticker, name, value):
+        self.market, self.ticker, self.name, self.value = market, ticker, name, value
+
+
+def test_tidy_puts_each_kind_on_its_own_line():
+    """채권은 뒤, 지수는 앞. 자리에 뜻이 생깁니다."""
+    p, groups = _folio_with(
+        ("KR", "069500", "KODEX 200", 400),
+        ("KR", "273130", "KODEX 종합채권액티브", 300),
+        ("KR", "498400", "KODEX 200타겟위클리커버드콜", 200),
+        ("KR", "357870", "TIGER CD금리투자KIS", 100),
+    )
+    pitch_service.tidy(p, groups)
+    row = lambda tk: pitch_grid.split(p.slots[ticker_key("KR", tk)])[0]
+    assert row("069500") == "AM"          # 대표지수 -> 공격
+    assert row("498400") == "MC"          # 커버드콜 -> 미드필드
+    assert row("273130") == "DF"          # 채권 -> 수비
+    assert row("357870") == "GK"          # 현금성 -> 골키퍼
+
+
+def test_tidy_reports_how_many_moved_and_is_idempotent():
+    """두 번 눌러도 또 옮기면 안 됩니다. 눌렀는데 아무 일도 안 일어난 것처럼
+    보여야 정상입니다."""
+    p, groups = _folio_with(
+        ("KR", "069500", "KODEX 200", 400),
+        ("KR", "273130", "KODEX 종합채권액티브", 300),
+    )
+    first = pitch_service.tidy(p, groups)
+    assert first == 2
+    assert pitch_service.tidy(p, groups) == 0
+
+
+def test_tidy_overrides_a_hand_placed_slot():
+    """`ensure_slots` 는 빈 종목만 채우지만, `tidy` 는 손으로 옮긴 것까지
+    다시 놓습니다. 그게 이 버튼의 뜻입니다(그래서 버튼일 때만 부릅니다)."""
+    p, groups = _folio_with(("KR", "273130", "KODEX 종합채권액티브", 300))
+    key = ticker_key("KR", "273130")
+    p.slots[key] = "ST-C"                      # 채권을 최전방에 손으로 올려둠
+    pitch_service.ensure_slots(p, groups)
+    assert p.slots[key] == "ST-C"              # 자동 배치는 건드리지 않습니다
+    assert pitch_service.tidy(p, groups) == 1
+    assert pitch_grid.split(p.slots[key])[0] == "DF"
+
+
+def test_tidy_never_puts_two_tickers_on_one_slot():
+    p, groups = _folio_with(*[
+        ("KR", f"00{i:04d}", f"KODEX 커버드콜{i}", 100 - i) for i in range(12)
+    ])
+    pitch_service.tidy(p, groups)
+    slots = list(p.slots.values())
+    assert len(slots) == len(set(slots))
+
+
+def test_tidy_drops_slots_it_cannot_place_instead_of_colliding():
+    """26자리가 다 차면 남는 종목은 자리를 비웁니다. 옛 자리를 그대로 두면
+    새로 놓은 종목과 겹쳐서 카드가 포개집니다."""
+    total = len(pitch_grid.all_slots())
+    p, groups = _folio_with(*[
+        ("KR", f"{i:06d}", f"KODEX 종목{i}", 1000 - i) for i in range(total + 3)
+    ])
+    pitch_service.tidy(p, groups)
+    slots = list(p.slots.values())
+    assert len(slots) == total
+    assert len(slots) == len(set(slots))
+
+
+def test_formation_reads_the_actual_placement_not_the_kind():
+    """손으로 옮겼으면 그게 사용자의 뜻입니다. 놓인 자리를 셉니다."""
+    p, groups = _folio_with(("KR", "273130", "KODEX 종합채권액티브", 300))
+    p.slots[ticker_key("KR", "273130")] = "ST-C"
+    assert pitch_service.formation_counts(p) == {"공격": 1, "미드필드": 0, "수비": 0}
+    assert pitch_service.formation(p) == "0-0-1"
+
+
+def test_formation_is_empty_when_nothing_is_placed():
+    assert pitch_service.formation(Portfolio()) == ""

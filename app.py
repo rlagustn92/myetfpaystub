@@ -136,7 +136,7 @@ def render_empty() -> None:
         note("증권사 · 계좌 · 종목 · 수량 · 평균 매입가격, 다섯 가지만 넣으면 됩니다.")
     with c2:
         st.markdown("**② 어떤 화면인지 먼저 보고 싶다면**")
-        if st.button("예시로 시작해보기", type="secondary", use_container_width=True):
+        if st.button("예시로 시작해보기", type="secondary", width="stretch"):
             for t, mk, nm, br, ac, sh, ap in [
                 ("069500", MARKET_KR, "KODEX 200", "미래에셋증권", "ISA", 100, 32000),
                 ("498400", MARKET_KR, "KODEX 200타겟위클리커버드콜", "키움증권", "일반", 500, 20000),
@@ -290,6 +290,7 @@ def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None
     groups = PS.group_by_ticker(summary)
     pitch_service.prune_slots(portfolio)          # 판 종목의 자리를 비웁니다
     pitch_service.ensure_slots(portfolio, groups)  # 새 종목에 자리를 줍니다
+    render_tidy_bar(groups)
     payload = pitch_service.build_players(summary, portfolio, groups)
 
     # 📸 이미지와 📋 텍스트는 **같은 줄**에서 만듭니다. 따로 만들면 같은
@@ -358,6 +359,39 @@ def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None
              f"위 '내 ETF' 목록에는 그대로 다 있습니다.")
 
 
+def render_tidy_bar(groups) -> None:
+    """⚽ 포지션 자동 정리 버튼 + 지금 포메이션.
+
+    ⚠ 정리는 **버튼을 눌렀을 때만** 합니다. 화면을 열 때마다 자동으로 하면
+      사용자가 손으로 끌어다 맞춰둔 배치가 말도 없이 흐트러집니다.
+    """
+    c1, c2 = st.columns([2, 3])
+    with c1:
+        if st.button("⚽ 포지션 자동 정리", width="stretch",
+                     disabled=not groups,
+                     help="종목 성격에 맞는 자리로 다시 늘어놓습니다. "
+                          "손으로 옮겨둔 자리는 없어집니다."):
+            moved = pitch_service.tidy(portfolio, groups)
+            if moved:
+                st.session_state["tidy_moved"] = moved
+                st.rerun()
+            else:
+                st.session_state["tidy_moved"] = 0
+    with c2:
+        st.write("")
+        shape = pitch_service.formation(portfolio)
+        if shape:
+            c = pitch_service.formation_counts(portfolio)
+            note(f"지금 배치 {shape} — 수비 {c['수비']} · 미드필드 {c['미드필드']} · "
+                 f"공격 {c['공격']} (자리에 세운 종목 수입니다)")
+
+    moved = st.session_state.pop("tidy_moved", None)
+    if moved:
+        st.success(f"{moved}개 종목의 자리를 옮겼습니다.")
+    elif moved == 0:
+        note("이미 정리되어 있습니다. 옮길 자리가 없었습니다.")
+
+
 def render_skin_picker() -> None:
     """경기장 스킨 고르기.
 
@@ -383,8 +417,12 @@ def render_skin_picker() -> None:
         # ⚠ note() 는 글자를 그대로 이스케이프합니다(마크다운이 아닙니다).
         #    여기에 ** 를 쓰면 별표가 그대로 찍힙니다.
         note(f"{labels[picked].korean}")
-        note("스킨은 경기장과 소매·깃·하의만 바꿉니다. "
-             "유니폼 몸통 색은 운용사를 나타내는 정보라 그대로 둡니다.")
+        # ⚠ v0.9.0 부터 **클럽풍 스킨은 유니폼 몸통까지 팀 색으로** 바꿉니다.
+        #    기본 잔디만 몸통을 운용사 색으로 둡니다. 문구가 옛 설명으로
+        #    남아 있으면 화면과 말이 달라집니다.
+        note("기본 잔디는 유니폼 몸통 색이 운용사입니다. "
+             "클럽풍 스킨을 고르면 몸통까지 팀 색이 되고, 운용사는 "
+             "이름표 색과 가슴 두 글자로 남습니다.")
         # 접힌 칸 안이 아니라 **항상 보이는 자리**에 둡니다. 의도를 분명히 하는 문구라
         # 사용자가 펼쳐야 보이면 의미가 없습니다.
         note(config.SKIN_DISCLAIMER)
@@ -440,7 +478,7 @@ def render_payslip() -> None:
                 }
                 for r in total.rows
             ],
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
 
     st.write("")
@@ -555,7 +593,7 @@ def render_detail() -> None:
             }
             for r in g.rows
         ],
-        use_container_width=True, hide_index=True,
+        width="stretch", hide_index=True,
     )
 
     st.write("")
@@ -626,7 +664,7 @@ def render_detail() -> None:
             }
             for d in items[:24]
         ],
-        use_container_width=True, hide_index=True,
+        width="stretch", hide_index=True,
     )
     note(f"출처 · {td.source}" + (f" ({td.source_url})" if td.source_url else ""))
 
@@ -811,7 +849,7 @@ def render_manage() -> None:
     edited = st.data_editor(
         rows,
         key="editor",
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "삭제": st.column_config.CheckboxColumn(width="small"),
@@ -868,15 +906,15 @@ def render_save() -> None:
         new_name = st.text_input("새로 만들기", placeholder="예: 와이프 계좌", key="profile_new")
         b1, b2, b3 = st.columns(3)
         with b1:
-            if st.button("만들기", use_container_width=True, disabled=not new_name.strip()):
+            if st.button("만들기", width="stretch", disabled=not new_name.strip()):
                 store.create(new_name)
                 st.rerun()
         with b2:
-            if st.button("복사하기", use_container_width=True):
+            if st.button("복사하기", width="stretch"):
                 store.duplicate(store.current)
                 st.rerun()
         with b3:
-            if st.button("삭제", use_container_width=True, disabled=len(names) <= 1):
+            if st.button("삭제", width="stretch", disabled=len(names) <= 1):
                 store.delete(store.current)
                 st.rerun()
 
@@ -894,7 +932,7 @@ def render_save() -> None:
             data=STORE.dumps(store).encode("utf-8"),
             file_name=config.EXPORT_FILENAME,
             mime="application/json",
-            use_container_width=True,
+            width="stretch",
         )
         note(f"포트폴리오 {len(names)}개 · 종목 {STORE.count_holdings(store)}줄")
     with c2:
@@ -946,7 +984,7 @@ with c1:
     stamps.append(f"마지막 계산 {config.now_local():%Y.%m.%d %H:%M} {config.TIMEZONE_LABEL}")
     note(" · ".join(stamps))
 with c2:
-    if st.button("🔄 정보 업데이트", use_container_width=True,
+    if st.button("🔄 정보 업데이트", width="stretch",
                  help="가격·환율·분배금·과세표준을 새로 받아옵니다."):
         cache.invalidate()
         st.rerun()
