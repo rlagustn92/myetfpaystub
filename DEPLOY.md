@@ -26,23 +26,46 @@ python -m pytest -m network  # ⭐ 이게 제일 중요합니다 (아래 설명)
 
 ## 1. GitHub 저장소
 
-**2026-09-21 완료.** `https://github.com/rlagustn92/myetfpaystub` (**비공개**),
+**2026-09-21 완료.** `https://github.com/rlagustn92/myetfpaystub` (**공개**),
 기본 브랜치 `main`.
-
-처음부터 다시 만든다면:
 
 ```bash
 git branch -M main
-gh repo create <저장소> --private --source=. --remote=origin
+gh repo create <저장소> --public --source=. --remote=origin
 git push -u origin main
 ```
 
-공개(public)로 해도 됩니다 — 개인정보가 들어가는 파일이 없습니다(투자 정보는
-사용자 브라우저에만 남습니다). 다만 §3 의 `COUNTER_NS` 는 예외라 Secrets 로 뺍니다.
+**왜 공개인가** — Streamlit Community Cloud 무료 플랜은 **공개 앱은 무제한,
+비공개 앱은 1개**입니다. 비공개로 만들었다가 그 한 자리를 쓰게 돼서 공개로
+바꿨습니다. 저장소에 개인정보가 들어가는 파일은 없습니다(투자 정보는 사용자
+브라우저에만 남습니다). `COUNTER_NS` 만 예외라 §3 처럼 Secrets 로 뺍니다.
 
-⚠ **비공개 저장소를 고르면** share.streamlit.io 에서 GitHub 로 로그인할 때
-**비공개 저장소 접근까지 승인**해야 목록에 뜹니다. 승인 화면에서 한 번 더
-물어보는데, 거기서 건너뛰면 저장소가 안 보여서 "저장소가 없다" 로 보입니다.
+### ⚠ 공개로 돌리기 전에 반드시 확인할 것
+
+1. **커밋에 박힌 실명·개인 이메일.** 처음 21개 커밋 중 17개가
+   `김현수 <wjsghks001@gmail.com>` 이었습니다. 공개하면 수집 봇이 긁어갑니다.
+   **공개 전에** 다시 써야 합니다(공개 후에는 늦습니다).
+
+   ```bash
+   git log --format='%an <%ae>' | sort -u          # 먼저 확인
+   FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --env-filter '
+     export GIT_AUTHOR_NAME="rlagustn92";  export GIT_AUTHOR_EMAIL="myetfpaystub@example.com"
+     export GIT_COMMITTER_NAME="rlagustn92"; export GIT_COMMITTER_EMAIL="myetfpaystub@example.com"
+   ' --tag-name-filter cat -- --branches --tags
+   git for-each-ref --format='%(refname)' refs/original | xargs -n1 git update-ref -d
+   git push --force-with-lease origin main
+   git config user.email "myetfpaystub@example.com"   # 다음 커밋부터 자동 적용
+   ```
+
+   `example.com` 은 RFC 2606 이 문서용으로 예약한 도메인이라 **누구도 등록할 수
+   없습니다.** "존재하지 않는 주소" 로 쓰기에 안전합니다.
+
+   ⚠ `git log --all` 로 확인하면 `origin/main`(옛 히스토리를 가리킴) 때문에
+   force push 전까지는 계속 옛 이메일이 보입니다. push 뒤에 다시 보세요.
+
+2. **예시 데이터가 실제 보유와 같은지.** `app.py` 의 "예시로 시작해보기" 에
+   증권사·계좌유형·종목·수량·평단이 들어 있습니다. 코드에 개인정보가 없어도
+   예시 데이터에는 있을 수 있습니다. (2026-09-21 확인: 지어낸 값이라 그대로 둠)
 
 ## 2. share.streamlit.io
 
