@@ -70,6 +70,17 @@
     pointer-events: none; text-transform: uppercase;
     box-shadow: 0 1px 3px rgba(0,0,0,0.25);
   }
+  /* 센터서클에 칠한 배지. 실제 구장이 중앙에 문양을 그려 두는 것을 흉내냅니다.
+     선수 카드보다 아래에 깔리고 반투명이라 카드를 가리지 않습니다. */
+  #badge {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 24%; aspect-ratio: 1; border-radius: 50%;
+    border: 3px solid #fff; opacity: .30;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #badge span { font-weight: 900; letter-spacing: .06em; }
+
   #bannerTop { top: 0.5%; }
   #bannerBot { bottom: 0.5%; }
 
@@ -203,6 +214,7 @@
       <rect x="443" y="1386" width="114" height="12" fill="#ffffff" stroke="var(--frame-a)" stroke-width="3"/>
       <path d="M360 1140 A 170 170 0 0 1 640 1140" fill="none" stroke="var(--line)" stroke-width="3"/>
     </svg>
+    <div id="badge"><span></span></div>
     <div class="banner" id="bannerTop"></div>
     <div class="banner" id="bannerBot"></div>
     <div id="empty">
@@ -476,12 +488,54 @@ function patternSVG(kind, color) {
  *  같은 팀 색인데 **카드마다 테두리가 달라** 한 팀으로 안 보였습니다.
  *  밝은 하의에는 어두운 선, 어두운 하의에는 밝은 선을 둘러 모든 카드가 똑같아집니다.
  */
-function outlineFor(hex) {
+function luminance(hex) {
   const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
-  if (!m) return "rgba(0,0,0,0.38)";
+  if (!m) return 0.5;
   const n = parseInt(m[1], 16);
-  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
-  return lum > 0.55 ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.40)";
+  return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+}
+
+function outlineFor(hex) {
+  return luminance(hex) > 0.55 ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.40)";
+}
+
+/** WCAG 상대 휘도. 단순 밝기와 달리 사람 눈이 느끼는 밝기에 맞춰져 있습니다. */
+function relLum(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+  if (!m) return 0.5;
+  const n = parseInt(m[1], 16);
+  const f = (c) => {
+    c /= 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * f((n >> 16) & 255) + 0.7152 * f((n >> 8) & 255) + 0.0722 * f(n & 255);
+}
+
+/** 그 바탕색 위에서 읽히는 글자색.
+ *
+ *  ⚠ 두 번 틀렸던 자리입니다.
+ *  1) 처음엔 배너 글씨로 스킨의 accent 를 그대로 썼습니다. 스킨에 따라 accent 가
+ *     광고보드 색과 **같은 값**이라(Ruhr Yellow: 배경도 글씨도 #FDE100) 21벌 중
+ *     4벌에서 글자가 아예 안 보였습니다.
+ *  2) 그다음엔 단순 밝기 문턱값(0.55)으로 흑/백을 골랐는데, 중간 밝기 색에서
+ *     틀렸습니다(나폴리 하늘색 #12A0D7 에 흰 글자 → 대비 2.98, 안 읽힘).
+ *
+ *  그래서 문턱값을 쓰지 않고 **흑·백 중 실제 대비가 더 높은 쪽**을 고릅니다.
+ *  어떤 색이 와도 최선이 나옵니다.
+ */
+function textOn(hex) {
+  const L = relLum(hex);
+  const white = 1.05 / (L + 0.05);
+  const black = (L + 0.05) / (relLum("#111111") + 0.05);
+  return white >= black ? "#FFFFFF" : "#111111";
+}
+
+/** 두 팀 색 중 어두운/밝은 쪽. 배너 바탕은 단색이어야 글자가 안 묻힙니다. */
+function darkerOf(a, b) {
+  return relLum(a) <= relLum(b) ? a : b;
+}
+function lighterOf(a, b) {
+  return relLum(a) > relLum(b) ? a : b;
 }
 
 /** 반바지 + 양말 (SVG).
@@ -949,26 +1003,44 @@ async function buildPitchCanvas() {
     const bw = W * 0.86, bx = W * 0.07;
     const bh = Math.max(15 * scale, pitchH * 0.036);
     const stripeW = 11 * scale;
+    // 화면(.banner)과 같은 규칙: 단색 바탕 + 아래 팀색 선 + 밝기로 정한 글자색
+    const banBg = darkerOf(frameA, frameB);
+    const banLine = lighterOf(frameA, frameB);
     const drawBanner = (txt, by) => {
       if (!txt) return;
       ctx.save();
       const box = new Path2D();
       box.roundRect(bx, by, bw, bh, 4 * scale);
       ctx.clip(box);
-      for (let x = bx, k = 0; x < bx + bw; x += stripeW, k++) {
-        ctx.fillStyle = (k % 2 === 0) ? frameA : frameB;
-        ctx.fillRect(x, by, Math.min(stripeW, bx + bw - x), bh);
-      }
-      ctx.fillStyle = (skin && skin.accent) || "#ffffff";
+      ctx.fillStyle = banBg;
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = banLine;
+      ctx.fillRect(bx, by + bh - 2 * scale, bw, 2 * scale);
+      ctx.fillStyle = textOn(banBg);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.font = `800 ${Math.max(7 * scale, W * 0.019)}px ${FONT}`;
-      ctx.shadowColor = "rgba(0,0,0,.45)";
-      ctx.shadowOffsetY = 1 * scale; ctx.shadowBlur = 2 * scale;
       ctx.fillText(txt.toUpperCase(), bx + bw / 2, by + bh / 2 + 0.5 * scale);
       ctx.restore();
     };
     drawBanner(bannerTop, barPx + pitchH * 0.011);
     drawBanner(bannerBot, barPx + pitchH - pitchH * 0.011 - bh);
+
+    // 센터서클 배지 (화면 #badge 와 같은 자리·같은 크기)
+    if (skin && skin.badge) {
+      const r = W * 0.12;
+      const cx = W / 2, cy = barPx + pitchH / 2;
+      ctx.save();
+      ctx.globalAlpha = 0.30;
+      ctx.lineWidth = 3 * scale; ctx.strokeStyle = frameA;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 3 * scale; ctx.strokeStyle = frameB;
+      ctx.beginPath(); ctx.arc(cx, cy, r - 3 * scale, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = frameA;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = `900 ${Math.max(11 * scale, W * 0.052)}px ${FONT}`;
+      ctx.fillText(skin.badge, cx, cy);
+      ctx.restore();
+    }
   }
 
   // ---- 유니폼 카드 ----
@@ -1243,17 +1315,32 @@ function applySkin(sk) {
   set("--accent", sk.accent);
   set("--stand", sk.stand);
 
-  // 배너 색도 스킨을 따릅니다 (광고보드와 같은 두 색 줄무늬 + 강조색 글씨).
-  const stripe = `repeating-linear-gradient(90deg, ${sk.frameA} 0 11px, ${sk.frameB} 11px 22px)`;
+  // 배너는 **단색**입니다. 줄무늬로 두면 글자가 밝은 칸 위에서 반쯤 묻힙니다.
+  // 두 번째 팀 색은 아래쪽 얇은 선으로 넣어 두 색이 다 보이게 합니다.
+  const banBg = darkerOf(sk.frameA, sk.frameB);
+  const banLine = lighterOf(sk.frameA, sk.frameB);
+  const banFg = textOn(banBg);
   for (const [id, txt] of [["bannerTop", bannerTop], ["bannerBot", bannerBot]]) {
     const el = document.getElementById(id);
     if (!el) continue;
     el.textContent = txt || "";
     el.style.display = txt ? "" : "none";
-    el.style.backgroundImage = stripe;
-    el.style.color = sk.accent || "#fff";
-    // 글자가 배너 색에 묻히지 않게 아주 얕은 외곽선을 둡니다.
-    el.style.textShadow = "0 1px 2px rgba(0,0,0,.45)";
+    el.style.backgroundImage = "none";
+    el.style.background = banBg;
+    el.style.color = banFg;
+    el.style.boxShadow = `0 1px 3px rgba(0,0,0,0.25), inset 0 -2px 0 ${banLine}`;
+    el.style.textShadow = "none";
+  }
+
+  // 센터서클에 painted 배지 — 실제 구장이 중앙에 문양을 칠해 두는 것과 같습니다.
+  const badge = document.getElementById("badge");
+  if (badge) {
+    const txt = sk.badge || "";
+    badge.style.display = txt ? "" : "none";
+    badge.firstElementChild.textContent = txt;
+    badge.style.borderColor = sk.frameA;
+    badge.firstElementChild.style.color = sk.frameA;
+    badge.style.boxShadow = `inset 0 0 0 3px ${sk.frameB}`;
   }
 
   // 잔디 깎기 무늬. 실제 구장처럼 무늬가 달라지면 판 전체가 확 달라 보입니다.
@@ -1328,6 +1415,10 @@ function applyBannerFont() {
   for (const id of ["bannerTop", "bannerBot"]) {
     const el = document.getElementById(id);
     if (el) el.style.fontSize = px.toFixed(1) + "px";
+  }
+  const badge = document.getElementById("badge");
+  if (badge && badge.firstElementChild) {
+    badge.firstElementChild.style.fontSize = Math.max(11, w * 0.052).toFixed(1) + "px";
   }
 }
 

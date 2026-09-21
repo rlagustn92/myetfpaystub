@@ -145,6 +145,7 @@ streamlit run app.py
 | 관중석 | 판 바깥 배경색 |
 | **유니폼** | **소매 · 깃 · 몸통 무늬**(세로줄 · 가로줄 · 중앙띠) · **반바지 · 양말** |
 | **골대 뒤** | 응원 배너 — 그 나라 말 응원 구호 (`FORZA NAPOLI`, `HOWAY THE LADS` …) |
+| **센터서클** | 지명 약자 배지 (`TYN`, `NAP`, `MAD` …) — 구장 중앙에 칠한 것처럼 |
 
 > London Red · London Blue · Thames White · Manchester Red · Manchester Sky ·
 > Merseyside Red · Tyneside Stripes · Madrid White · Catalonia Claret ·

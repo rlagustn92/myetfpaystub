@@ -213,3 +213,58 @@ def test_mow_patterns_are_actually_varied():
 def test_patterns_are_actually_varied():
     used = {s.pattern for s in skins.SKINS}
     assert len(used) >= 3, used
+
+
+# ------------------------------------------------- 배너 글자가 읽히는가
+def _rel_lum(hex_color: str) -> float:
+    """WCAG 상대 휘도. 프론트엔드의 relLum() 과 같은 식입니다."""
+    n = int(hex_color.lstrip("#"), 16)
+    out = []
+    for shift in (16, 8, 0):
+        c = ((n >> shift) & 255) / 255
+        out.append(c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * out[0] + 0.7152 * out[1] + 0.0722 * out[2]
+
+
+def _contrast(a: str, b: str) -> float:
+    hi, lo = sorted((_rel_lum(a), _rel_lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _banner_bg(skin) -> str:
+    """프론트엔드 darkerOf(frameA, frameB) 와 같은 선택."""
+    return (skin.frame_a if _rel_lum(skin.frame_a) <= _rel_lum(skin.frame_b)
+            else skin.frame_b)
+
+
+def _text_on(bg: str) -> str:
+    """프론트엔드 textOn() 과 같은 선택 — 흑·백 중 대비가 높은 쪽."""
+    lum = _rel_lum(bg)
+    return "#FFFFFF" if (1.05 / (lum + 0.05)) >= ((lum + 0.05) / (_rel_lum("#111111") + 0.05)) \
+        else "#111111"
+
+
+@pytest.mark.parametrize("skin", skins.SKINS, ids=lambda s: s.id)
+def test_banner_text_is_readable(skin):
+    """골대 뒤 배너 글자가 바탕에 묻히면 안 됩니다.
+
+    두 번 틀렸던 자리입니다.
+    1) 글자색으로 `accent` 를 썼는데 스킨에 따라 광고보드 색과 같은 값이라
+       21벌 중 4벌에서 글자가 아예 안 보였습니다.
+    2) 단순 밝기 문턱값으로 흑/백을 골랐더니 중간 밝기 색에서 틀렸습니다
+       (나폴리 하늘색에 흰 글자 → 대비 2.98).
+    지금은 흑·백 중 실제 대비가 높은 쪽을 고릅니다. WCAG AA(4.5) 를 넘겨야 합니다.
+    """
+    bg = _banner_bg(skin)
+    ratio = _contrast(bg, _text_on(bg))
+    assert ratio >= 4.5, f"{skin.id}: 배너 대비 {ratio:.2f} (바탕 {bg})"
+
+
+@pytest.mark.parametrize("skin", skins.SKINS, ids=lambda s: s.id)
+def test_badge_is_a_place_code_not_a_club_abbreviation(skin):
+    """센터서클 배지는 **지명 약자**만 씁니다. 구단 약칭(LFC·PSG·BVB 류)은 상표입니다."""
+    assert skin.badge.strip(), f"{skin.id} 배지 글자가 없습니다"
+    assert 2 <= len(skin.badge) <= 4, f"{skin.id}: 배지는 2~4글자 ({skin.badge})"
+    banned = {"LFC", "MUFC", "MCFC", "PSG", "BVB", "FCB", "AFC", "THFC", "CFC",
+              "ACM", "SSC", "ASR", "NUFC", "RMA"}
+    assert skin.badge.upper() not in banned, f"{skin.id}: 구단 약칭 {skin.badge}"
