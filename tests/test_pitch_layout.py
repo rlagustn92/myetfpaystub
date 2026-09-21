@@ -150,3 +150,40 @@ def test_all_slots_are_inside_the_pitch(geo):
     for slot in pitch_grid.all_slots():
         x, y = pitch_grid.center(slot)
         assert 0.0 < x < 1.0 and 0.0 < y < 1.0, f"{slot} 좌표가 판을 벗어납니다: {x},{y}"
+
+
+def test_bottom_caption_clears_the_advertising_board():
+    """"🏠 우리 진영 · 골키퍼 ▼" 가 **캡처 이미지에서만** 광고보드를 파고들던 문제.
+
+    화면은 `#botbar` 의 padding 덕에 멀쩡했는데, 캡처는 26px 바 한가운데에
+    글자를 찍기만 해서 보드를 4px 파고들었습니다. 위 문구는 **글자 아래**가
+    보드 쪽이라 받침 자리가 저절로 여백이 되지만, 아래 문구는 **글자 위**가
+    보드 쪽이고 한글은 글자 위 여백이 거의 없습니다.
+
+    두 값은 **숫자가 다릅니다**(화면 6px / 캡처 10px). 쌓는 방식이 달라서,
+    실제로 렌더링해 재어 "보드 바깥선에서 글자 위까지 8~10px" 로 맞춘 값입니다
+    (화면 9.6px / 캡처 8.0px).
+    여기서는 둘 다 살아 있는지, 그리고 캡처가 0 으로 되돌아가지 않았는지만
+    지킵니다 — 숫자를 바꿨다면 화면을 띄워 다시 재야 합니다.
+    """
+    html = _read(FRONTEND)
+
+    m = re.search(r"#botbar\s*\{[^}]*padding-top:\s*([\d.]+)px", html, re.S)
+    assert m, "#botbar 의 padding-top 을 못 찾았습니다"
+    assert float(m.group(1)) > 3.0, "화면 아래 문구가 공용 여백(3px)으로 돌아갔습니다"
+
+    g = re.search(r"const BOT_GAP\s*=\s*([\d.]+)", html)
+    assert g, "캡처의 BOT_GAP 을 못 찾았습니다"
+    assert float(g.group(1)) >= 8, (
+        "BOT_GAP 이 작으면 캡처에서 문구가 다시 광고보드에 붙습니다 "
+        f"(지금 {g.group(1)})"
+    )
+
+
+def test_capture_height_makes_room_for_the_shifted_caption():
+    """문구만 내리고 캔버스 높이를 안 늘리면 아래 요약과 겹칩니다."""
+    html = _read(FRONTEND)
+    h = re.search(r"const H = ([^;]+);", html)
+    assert h and "botGapPx" in h.group(1), "캔버스 높이에 botGapPx 가 안 들어갔습니다"
+    y = re.search(r"let y = barPx \+ pitchH \+ ([^;]+);", html)
+    assert y and "botGapPx" in y.group(1), "아래 요약 시작점에 botGapPx 가 빠졌습니다"

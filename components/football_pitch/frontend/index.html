@@ -27,7 +27,15 @@
      좁은 화면에서는 문구를 "…" 로 줄여서 버튼을 가리지 않게 합니다. */
   #topbar { color: #b23b3b; padding-right: 196px; }
   #topbar .dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #botbar { color: #1f6f3a; }
+  /* 아래 문구만 위 여백을 더 줍니다.
+     위 문구는 **글자 아래**가 광고보드 쪽이라 받침 자리가 저절로 여백이 되는데,
+     아래 문구는 **글자 위**가 보드 쪽입니다. 한글은 글자 위에 여백이 거의 없어서
+     같은 간격이어도 보드에 달라붙어 보입니다(실제로 지적을 받았습니다).
+     ⚠ 캡처(buildPitchCanvas)의 BOT_GAP 과 **숫자가 같지 않습니다.** 화면은
+     여백 + 줄상자로 쌓이고 캡처는 26px 바 한가운데에 글자를 찍기 때문입니다.
+     둘 다 "보드 바깥선에서 글자 위까지 8~10px" 이 되도록 실제로 재서 맞춘 값이라,
+     한쪽을 고치면 반드시 렌더링해서 다시 재야 합니다. */
+  #botbar { color: #1f6f3a; padding-top: 6px; }
   #tools { position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
     display: flex; gap: 4px; }
   .tbtn {
@@ -1015,9 +1023,20 @@ async function buildPitchCanvas() {
   const pr = pitch.getBoundingClientRect();
   const scale = 2;                       // 고해상도로 캡처
   const barH = 26;                       // 상/하단 바 높이(CSS px 기준)
+  // 아래 문구를 광고보드에서 띄우는 여백(CSS px).
+  //
+  // ⚠ 이걸 0 으로 두었더니 **캡처 이미지에서만** 문구가 광고보드를 4px 파고들었습니다
+  //    (화면은 #botbar 의 padding 덕에 멀쩡했습니다). 한글은 글자 **위쪽** 여백이
+  //    거의 없어서, 위 문구(글자 아래가 보드 쪽 -> 받침 자리가 여백이 됨)와 같은
+  //    간격을 줘도 아래 문구만 붙어 보입니다.
+  // ⚠ 화면의 `#botbar { padding-top }` 과 **숫자가 다릅니다.** 화면은 여백 + 줄상자로
+  //    쌓이고 여기는 26px 바 한가운데에 글자를 찍습니다. 둘 다 "보드 바깥선에서
+  //    글자 위까지 8~10px" 이 되도록 재서 맞췄습니다(화면 9.6 / 캡처 8.0).
+  const BOT_GAP = 10;
   const pad = 12 * scale;
   const W = Math.round(pr.width * scale);
   const barPx = Math.round(barH * scale);
+  const botGapPx = Math.round(BOT_GAP * scale);
   const pitchH = Math.round(pr.height * scale);
 
   // 아래에 붙일 요약/명단 높이를 미리 계산
@@ -1028,7 +1047,7 @@ async function buildPitchCanvas() {
   const legendH  = legend.length ? (legend.length * rowH + 8 * scale) : 0;
   const footH    = footer ? 26 * scale : 0;
   const extra    = (stripH ? stripH + 9 * scale : 0) + noteH + keyH + legendH + footH;
-  const H = barPx * 2 + pitchH + extra + (extra ? 8 * scale : 0);
+  const H = barPx * 2 + botGapPx + pitchH + extra + (extra ? 8 * scale : 0);
 
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
@@ -1052,7 +1071,8 @@ async function buildPitchCanvas() {
   ctx.fillStyle = "#b23b3b";
   ctx.fillText("▲ 공격 방향 (상대 골문)", W / 2, barPx / 2);
   ctx.fillStyle = "#1f6f3a";
-  ctx.fillText("🏠 우리 진영 · 골키퍼 ▼", W / 2, barPx + pitchH + barPx / 2);
+  ctx.fillText("🏠 우리 진영 · 골키퍼 ▼", W / 2,
+               barPx + pitchH + botGapPx + barPx / 2);
 
   // 광고보드 — 화면의 #frame 과 같은 두 색 줄무늬.
   // ⚠ 캔버스에서는 잔디가 가로 폭을 꽉 채우므로 좌우 테두리를 그리면 곧바로
@@ -1247,7 +1267,7 @@ async function buildPitchCanvas() {
   }
 
   // ---- 아래 요약 ----
-  let y = barPx + pitchH + barPx + (extra ? 8 * scale : 0);
+  let y = barPx + pitchH + botGapPx + barPx + (extra ? 8 * scale : 0);
 
   if (stripH) {
     ctx.strokeStyle = "rgba(15,42,68,0.10)";
