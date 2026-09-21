@@ -78,8 +78,12 @@
     border: 3px solid #fff; opacity: .30;
     display: flex; align-items: center; justify-content: center;
     pointer-events: none;
+    /* 깃발 색띠를 동그랗게 잘라내기 위한 것. 없으면 네모로 삐져나옵니다. */
+    overflow: hidden;
   }
-  #badge span { font-weight: 900; letter-spacing: .06em; }
+  /* 국기·지역기 색띠. 지명 약자 뒤에 깔립니다(구단 엠블럼이 아닙니다). */
+  #badge svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #badge span { position: relative; font-weight: 900; letter-spacing: .06em; }
 
   #bannerTop { top: 0.5%; }
   #bannerBot { bottom: 0.5%; }
@@ -454,12 +458,74 @@ function drawTaegeuk(ctx, cx, cy, r, ring) {
   ctx.fill(new Path2D(taegeukRedPath(cx, cy, r)));
 }
 
-/** 화면용 유니폼 SVG 문자열. uid 는 clipPath id 충돌을 막기 위한 것. */
-/** 몸통 위에 덧입히는 무늬 (SVG).
+/** 센터서클 깃발의 도형들. 가로세로 100 상자 안의 좌표로 돌려줍니다.
  *
- *  ⚠ 몸통 **바탕색은 절대 안 덮습니다.** 바탕색이 곧 운용사라서, 다 덮으면
- *  어느 운용사 상품인지 알 수 없게 됩니다. 무늬는 절반쯤만 가립니다.
+ *  ⚠ **구단 엠블럼은 그리지 않습니다.** 여기 들어오는 것은 국기·지역기 같은
+ *  공공 상징뿐입니다(components/skins.py 의 badge_bars). 도시 상징 도형
+ *  (곰·벌·화산 …)도 검토했지만 깃발이 더 예뻐서 깃발로 갔습니다.
+ *
+ *  화면(badgeFlagSVG)과 캡처(drawBadgeFlag)가 **이 한 함수**를 같이 씁니다.
  */
+function badgeParts(dir, bars) {
+  if (!bars || !bars.length) return [];
+  const R = (x, y, w, h, c) => ({ t: "r", x, y, w, h, c });
+  const P = (pts, c) => ({ t: "p", pts, c });
+  if (dir === "cross") {                       // 잉글랜드기 류 — 십자
+    return [R(0, 0, 100, 100, bars[0]),
+            R(38, 0, 24, 100, bars[1]), R(0, 38, 100, 24, bars[1])];
+  }
+  if (dir === "saltire") {                     // 스코틀랜드기 — X 자
+    return [R(0, 0, 100, 100, bars[0]),
+            P([[0, 0], [17, 0], [100, 83], [100, 100], [83, 100], [0, 17]], bars[1]),
+            P([[100, 0], [100, 17], [17, 100], [0, 100], [0, 83], [83, 0]], bars[1])];
+  }
+  if (dir === "diamond") {                     // 바이에른 주기 — 마름모 격자
+    const out = [R(0, 0, 100, 100, bars[0])], r = 13;
+    [[12, 38, 64, 90], [25, 51, 77], [12, 38, 64, 90], [25, 51, 77]]
+      .forEach((xs, row) => xs.forEach((x) => {
+        const y = 12 + row * 25;
+        out.push(P([[x, y - r], [x + r, y], [x, y + r], [x - r, y]], bars[1]));
+      }));
+    return out;
+  }
+  const n = bars.length, s = 100 / n;          // "v" 세로띠 / "h" 가로띠
+  return bars.map((c, i) => dir === "h" ? R(0, i * s, 100, s + 0.5, c)
+                                        : R(i * s, 0, s + 0.5, 100, c));
+}
+
+function badgeFlagSVG(dir, bars) {
+  const parts = badgeParts(dir, bars);
+  if (!parts.length) return "";
+  return '<svg viewBox="0 0 100 100" preserveAspectRatio="none">' + parts.map((p) =>
+    p.t === "r"
+      ? '<rect x="' + p.x + '" y="' + p.y + '" width="' + p.w + '" height="' + p.h +
+        '" fill="' + escapeHtml(p.c) + '"/>'
+      : '<path d="M' + p.pts.map((q) => q.join(" ")).join(" L") + ' Z" fill="' +
+        escapeHtml(p.c) + '"/>'
+  ).join("") + '</svg>';
+}
+
+/** 마름모 격자(바이에른 주 깃발 문양)의 중심 좌표. 반지름 11.
+ *  화면(patternSVG)과 캡처(drawPattern)가 **같은 값**을 써야 합니다. */
+const DIAMONDS = [[25, 18], [50, 18], [75, 18], [37, 42], [62, 42],
+                  [25, 66], [50, 66], [75, 66], [37, 90], [62, 90]];
+const DIAMOND_R = 11;
+
+/** 유니폼 몸통 색.
+ *
+ *  스킨이 `body` 를 주면 **그 팀 색**, 안 주면 **운용사 색**(기본 스킨이 그렇습니다).
+ *  몸통을 팀 색으로 내주는 대신 운용사는 이름표 배경 · 상의 테두리 · 가슴 두 글자
+ *  세 곳에서 계속 보입니다. 시장 구분(태극/성조기)은 가슴 문장이 지고 있어서
+ *  몸통색이 바뀌어도 안 깨집니다.
+ */
+function bodyOf(kit) {
+  const sk = skin || {};
+  if (sk.body) return sk.body;
+  return kit.style === "us" ? US_BODY : kit.main;
+}
+
+/** 화면용 유니폼 SVG 문자열. uid 는 clipPath id 충돌을 막기 위한 것. */
+/** 몸통 위에 덧입히는 무늬 (SVG). 바탕이 절반 이상 남게 그립니다. */
 function patternSVG(kind, color) {
   if (!kind || kind === "plain" || !color) return "";
   const c = escapeHtml(color);
@@ -483,6 +549,13 @@ function patternSVG(kind, color) {
   }
   if (kind === "sash") {      // 어깨에서 허리로 내려오는 대각 띠
     return '<path d="M0 18 L82 118 L100 118 L100 96 L22 0 L0 0 Z" fill="' + c + '"/>';
+  }
+  if (kind === "diamonds") {  // 마름모 격자 (바이에른 주 깃발 문양)
+    const r = DIAMOND_R;
+    return DIAMONDS.map(([x, y]) =>
+      '<path d="M ' + x + ' ' + (y - r) + ' L ' + (x + r) + ' ' + y +
+      ' L ' + x + ' ' + (y + r) + ' L ' + (x - r) + ' ' + y + ' Z" fill="' + c + '"/>'
+    ).join("");
   }
   return "";
 }
@@ -571,22 +644,28 @@ function hoseSVG(kit, sk) {
 function jerseySVG(kit, weightPct, uid) {
   const num = fmtNum(weightPct);
   const fit = fitNumber(num, "%");
+  const sk = skin || {};
+  const body = bodyOf(kit);
+  // 몸통이 팀 색이면 글자색은 그 몸통 위에서 읽히는 쪽으로 다시 고릅니다.
+  // (운용사 기본색에 맞춰 둔 kit.text 를 그대로 쓰면 흰 몸통에 흰 글자가 됩니다)
+  const onBody = sk.body ? textOn(sk.body) : null;
   let inner, numFill, brandTag = "";
   if (kit.style === "us") {
+    // 미국 카드의 표시는 **가슴 성조기**입니다. 몸통색이 아니라서, 스킨이
+    // 몸통을 물들여도 미국 상장이라는 정보는 안 깨집니다.
+    const usSleeve = sk.body ? (sk.sleeve || body) : US_RED;
     inner =
-      '<rect x="0" y="0" width="100" height="118" fill="' + US_BODY + '"/>' +
-      '<rect x="0" y="0" width="24" height="40" fill="' + US_RED + '"/>' +
-      '<rect x="76" y="0" width="24" height="40" fill="' + US_RED + '"/>' +
-      // 미국 카드는 빨간 소매 + 가슴 성조기가 "미국 상장" 표시라 건드리지 않습니다.
-      // 깃 색만 스킨을 따릅니다.
+      '<rect x="0" y="0" width="100" height="118" fill="' + escapeHtml(body) + '"/>' +
+      (sk.body ? patternSVG(sk.pattern, sk.patternColor) : '') +
+      '<rect x="0" y="0" width="24" height="40" fill="' + escapeHtml(usSleeve) + '"/>' +
+      '<rect x="76" y="0" width="24" height="40" fill="' + escapeHtml(usSleeve) + '"/>' +
       '<path d="' + COLLAR_PATH + '" fill="' +
-        escapeHtml((skin && skin.trim) || US_NAVY) + '"/>' +
+        escapeHtml(sk.trim || US_NAVY) + '"/>' +
       usFlagSVG(FLAG.x, FLAG.y, FLAG.w, FLAG.h, FLAG_SPEC.chest);
-    numFill = US_NAVY;
+    numFill = onBody || US_NAVY;
   } else {
-    // 바탕 = 운용사 색(정보) -> 무늬 -> 소매 -> 깃 -> 태극(한국 종목 표시) 순으로 쌓습니다.
-    const sk = skin || {};
-    inner = '<rect x="0" y="0" width="100" height="118" fill="' + kit.main + '"/>' +
+    // 바탕 -> 무늬 -> 소매 -> 깃 -> 태극(한국 종목 표시) 순으로 쌓습니다.
+    inner = '<rect x="0" y="0" width="100" height="118" fill="' + escapeHtml(body) + '"/>' +
             patternSVG(sk.pattern, sk.patternColor) +
             (sk.sleeve
               ? '<rect x="0" y="0" width="24" height="40" fill="' + escapeHtml(sk.sleeve) + '"/>' +
@@ -597,11 +676,13 @@ function jerseySVG(kit, weightPct, uid) {
               : '') +
             // 목 바로 아래 한가운데에 태극 (= 한국 종목. 무늬 위에 얹어 항상 보이게)
             taegeukSVG(50, TAEGEUK_Y, TAEGEUK_R);
-    numFill = kit.text;
-    if (kit.brand) {
-      brandTag = '<text x="50" y="60" text-anchor="middle" font-size="12" font-weight="700" ' +
-                 'fill="' + kit.text + '" opacity="0.75">' + escapeHtml(kit.brand.slice(0, 2)) + '</text>';
-    }
+    numFill = onBody || kit.text;
+  }
+  // 가슴 두 글자 = 운용사. 몸통을 팀 색에 내준 대신 여기서 운용사가 보입니다.
+  if (kit.brand) {
+    brandTag = '<text x="50" y="60" text-anchor="middle" font-size="12" font-weight="700" ' +
+               'fill="' + (onBody || kit.text) + '" opacity="0.75">' +
+               escapeHtml(kit.brand.slice(0, 2)) + '</text>';
   }
   return '<svg class="shirt" viewBox="' + KIT_VIEWBOX + '">' +
     '<defs><clipPath id="jc' + uid + '"><path d="' + SHIRT_PATH + '"/></clipPath></defs>' +
@@ -614,7 +695,7 @@ function jerseySVG(kit, weightPct, uid) {
     // 무늬(줄무늬) 위에 숫자가 걸치면 안 읽힙니다. 몸통색으로 후광을 둘러
     // 어떤 무늬 위에서도 읽히게 합니다. paint-order 로 테두리를 먼저 칠합니다.
     '<text x="' + (50 - fit.width / 2).toFixed(2) + '" y="98" font-weight="700" ' +
-      'stroke="' + (kit.style === "us" ? US_BODY : kit.main) + '" stroke-width="3.2" ' +
+      'stroke="' + escapeHtml(body) + '" stroke-width="3.2" ' +
       'stroke-linejoin="round" paint-order="stroke" ' +
       'fill="' + numFill + '">' +
       '<tspan font-size="' + fit.fs + '">' + escapeHtml(num) + '</tspan>' +
@@ -802,6 +883,14 @@ function drawPattern(ctx, kind, color) {
   } else if (kind === "sash") {
     const p = new Path2D("M0 18 L82 118 L100 118 L100 96 L22 0 L0 0 Z");
     ctx.fill(p);
+  } else if (kind === "diamonds") {
+    const r = DIAMOND_R;
+    for (const [x, y] of DIAMONDS) {
+      ctx.beginPath();
+      ctx.moveTo(x, y - r); ctx.lineTo(x + r, y);
+      ctx.lineTo(x, y + r); ctx.lineTo(x - r, y);
+      ctx.closePath(); ctx.fill();
+    }
   }
 }
 
@@ -814,16 +903,21 @@ function drawJersey(ctx, cx, topY, w, kit, weightPct) {
   const shirt = new Path2D(SHIRT_PATH);
   ctx.save();
   ctx.clip(shirt);
+  // 화면(jerseySVG)과 **같은 몸통색·같은 글자색**이어야 캡처가 안 어긋납니다.
+  const sk = skin || {};
+  const body = bodyOf(kit);
+  const onBody = sk.body ? textOn(sk.body) : null;
   let numFill;
   if (kit.style === "us") {
-    ctx.fillStyle = US_BODY; ctx.fillRect(0, 0, 100, 118);
-    ctx.fillStyle = US_RED;  ctx.fillRect(0, 0, 24, 40); ctx.fillRect(76, 0, 24, 40);
-    ctx.fillStyle = (skin && skin.trim) || US_NAVY; ctx.fill(new Path2D(COLLAR_PATH));
+    const usSleeve = sk.body ? (sk.sleeve || body) : US_RED;
+    ctx.fillStyle = body; ctx.fillRect(0, 0, 100, 118);
+    if (sk.body) drawPattern(ctx, sk.pattern, sk.patternColor);
+    ctx.fillStyle = usSleeve; ctx.fillRect(0, 0, 24, 40); ctx.fillRect(76, 0, 24, 40);
+    ctx.fillStyle = sk.trim || US_NAVY; ctx.fill(new Path2D(COLLAR_PATH));
     drawUSFlag(ctx, FLAG.x, FLAG.y, FLAG.w, FLAG.h, FLAG_SPEC.chest, 1.4);
-    numFill = US_NAVY;
+    numFill = onBody || US_NAVY;
   } else {
-    const sk = skin || {};
-    ctx.fillStyle = kit.main; ctx.fillRect(0, 0, 100, 118);
+    ctx.fillStyle = body; ctx.fillRect(0, 0, 100, 118);
     drawPattern(ctx, sk.pattern, sk.patternColor);
     if (sk.sleeve) {
       ctx.fillStyle = sk.sleeve;
@@ -831,7 +925,7 @@ function drawJersey(ctx, cx, topY, w, kit, weightPct) {
     }
     if (sk.trim) { ctx.fillStyle = sk.trim; ctx.fill(new Path2D(COLLAR_PATH)); }
     drawTaegeuk(ctx, 50, TAEGEUK_Y, TAEGEUK_R);
-    numFill = kit.text;
+    numFill = onBody || kit.text;
   }
   ctx.restore();
 
@@ -839,7 +933,6 @@ function drawJersey(ctx, cx, topY, w, kit, weightPct) {
 
   // 반바지 + 양말 — 화면(hoseSVG)과 **같은 좌표/같은 색**이어야 합니다.
   {
-    const sk = skin || {};
     const shortC = sk.shorts || kit.dark;
     const sockC = sk.socks || kit.dark;
     ctx.lineWidth = 2.5;
@@ -859,9 +952,9 @@ function drawJersey(ctx, cx, topY, w, kit, weightPct) {
   }
 
   ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-  if (kit.style !== "us" && kit.brand) {
+  if (kit.brand) {
     ctx.globalAlpha = 0.75;
-    ctx.fillStyle = kit.text;
+    ctx.fillStyle = onBody || kit.text;
     ctx.font = 'bold 12px ' + FONT;
     ctx.fillText(kit.brand.slice(0, 2), 50, 60);
     ctx.globalAlpha = 1;
@@ -874,7 +967,7 @@ function drawJersey(ctx, cx, topY, w, kit, weightPct) {
   // 화면(jerseySVG)과 같은 후광. 무늬 위에서도 숫자가 읽히게 합니다.
   ctx.lineWidth = 3.2;
   ctx.lineJoin = "round";
-  ctx.strokeStyle = (kit.style === "us") ? US_BODY : kit.main;
+  ctx.strokeStyle = body;
   ctx.fillStyle = numFill;
   ctx.font = `bold ${fit.fs}px ${FONT}`;
   ctx.strokeText(numTxt, startX, 98);
@@ -1036,15 +1129,45 @@ async function buildPitchCanvas() {
     if (skin && skin.badge) {
       const r = W * 0.12;
       const cx = W / 2, cy = barPx + pitchH / 2;
+      const bars = skin.badgeBars || [];
+      const parts = badgeParts(skin.badgeDir, bars);
       ctx.save();
-      ctx.globalAlpha = 0.30;
+      // 화면(#badge)과 같은 투명도 — 깃발이 깔리면 조금 더 진하게 보여줍니다.
+      ctx.globalAlpha = parts.length ? 0.38 : 0.30;
+
+      if (parts.length) {
+        // 깃발 색띠. 100x100 좌표를 원 지름에 맞춰 늘린 뒤 동그랗게 잘라냅니다.
+        ctx.save();
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+        ctx.translate(cx - r, cy - r); ctx.scale(r / 50, r / 50);
+        for (const p of parts) {
+          ctx.fillStyle = p.c;
+          if (p.t === "r") { ctx.fillRect(p.x, p.y, p.w, p.h); }
+          else {
+            ctx.beginPath();
+            p.pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+            ctx.closePath(); ctx.fill();
+          }
+        }
+        ctx.restore();
+      }
+
       ctx.lineWidth = 3 * scale; ctx.strokeStyle = frameA;
       ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
       ctx.lineWidth = 3 * scale; ctx.strokeStyle = frameB;
       ctx.beginPath(); ctx.arc(cx, cy, r - 3 * scale, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = frameA;
+
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.font = `900 ${Math.max(11 * scale, W * 0.052)}px ${FONT}`;
+      if (parts.length) {
+        // 화면의 text-shadow 와 같은 효과 — 흰 글자에 검은 테두리.
+        ctx.lineWidth = 3 * scale; ctx.lineJoin = "round";
+        ctx.strokeStyle = "rgba(0,0,0,.7)";
+        ctx.strokeText(skin.badge, cx, cy);
+        ctx.fillStyle = "#FFFFFF";
+      } else {
+        ctx.fillStyle = frameA;
+      }
       ctx.fillText(skin.badge, cx, cy);
       ctx.restore();
     }
@@ -1343,11 +1466,26 @@ function applySkin(sk) {
   const badge = document.getElementById("badge");
   if (badge) {
     const txt = sk.badge || "";
+    const bars = sk.badgeBars || [];
     badge.style.display = txt ? "" : "none";
-    badge.firstElementChild.textContent = txt;
+    // 깃발 색띠(있으면) 뒤에 깔고, 그 위에 지명 약자.
+    badge.innerHTML = badgeFlagSVG(sk.badgeDir, bars) + "<span></span>";
+    const span = badge.querySelector("span");
+    span.textContent = txt;
     badge.style.borderColor = sk.frameA;
-    badge.firstElementChild.style.color = sk.frameA;
     badge.style.boxShadow = `inset 0 0 0 3px ${sk.frameB}`;
+    if (bars.length) {
+      // 색띠가 여러 색이라 한 가지 글자색으로는 다 못 이깁니다. 흰 글자에
+      // 검은 테두리를 둘러 어떤 띠 위에서도 읽히게 합니다.
+      badge.style.opacity = ".38";
+      span.style.color = "#FFFFFF";
+      span.style.textShadow =
+        "0 0 3px rgba(0,0,0,.85), 1px 1px 0 rgba(0,0,0,.6), -1px -1px 0 rgba(0,0,0,.6)";
+    } else {
+      badge.style.opacity = ".30";
+      span.style.color = sk.frameA;
+      span.style.textShadow = "none";
+    }
   }
 
   // 잔디 깎기 무늬. 실제 구장처럼 무늬가 달라지면 판 전체가 확 달라 보입니다.
@@ -1423,9 +1561,11 @@ function applyBannerFont() {
     const el = document.getElementById(id);
     if (el) el.style.fontSize = px.toFixed(1) + "px";
   }
+  // ⚠ firstElementChild 가 아니라 span 을 찾습니다 — 깃발 SVG 가 앞에 깔려 있어서요.
   const badge = document.getElementById("badge");
-  if (badge && badge.firstElementChild) {
-    badge.firstElementChild.style.fontSize = Math.max(11, w * 0.052).toFixed(1) + "px";
+  const badgeSpan = badge && badge.querySelector("span");
+  if (badgeSpan) {
+    badgeSpan.style.fontSize = Math.max(11, w * 0.052).toFixed(1) + "px";
   }
 }
 

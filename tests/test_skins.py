@@ -135,8 +135,10 @@ def test_to_dict_uses_the_keys_the_frontend_reads():
     스킨이 **조용히 적용되지 않습니다.** 에러도 안 납니다."""
     d = skins.get("london-red").to_dict()
     assert set(d) >= {"turfA", "turfB", "mow", "line", "slot", "frameA", "frameB",
-                      "stand", "accent", "sleeve", "trim", "pattern", "patternColor",
-                      "shorts", "socks", "sockBand", "chant", "chantHome", "badge"}
+                      "stand", "accent", "body", "sleeve", "trim",
+                      "pattern", "patternColor",
+                      "shorts", "socks", "sockBand", "chant", "chantHome",
+                      "badge", "badgeBars", "badgeDir"}
     assert d["frameA"] == skins.get("london-red").frame_a
     assert d["sleeve"] == "#FFFFFF"          # 붉은 몸통에 흰 소매
 
@@ -200,18 +202,45 @@ def test_everything_is_unlocked_for_now():
     assert all(skin_service.is_unlocked(p, s.id) for s in skins.SKINS)
 
 
-def test_skin_never_touches_the_jersey_body_colour():
-    """몸통 바탕색 = 운용사 브랜드(정보). 스킨이 이걸 바꾸면 어느 운용사 상품인지
-    알 수 없게 됩니다. 소매·깃·무늬만 건드립니다."""
+def test_default_grass_leaves_the_jersey_body_to_the_issuer():
+    """기본 스킨은 몸통을 안 바꿉니다 — 여기가 정보의 기준선입니다.
+
+    `body` 가 비어 있으면 프론트엔드(bodyOf)가 운용사 색(kit.main)을 씁니다.
+    기본값이 곧 "정보 우선" 모드라서, 아무 스킨도 안 고른 사람은 지금까지와
+    똑같은 화면을 봅니다.
+    """
+    assert skins.get(skins.DEFAULT_ID).body == ""
+    assert skins.get(skins.DEFAULT_ID).to_dict()["body"] == ""
+
+
+@pytest.mark.parametrize("skin", skins.SKINS[1:], ids=lambda s: s.id)
+def test_club_skins_colour_the_jersey_body(skin):
+    """클럽풍 스킨은 몸통까지 팀 색으로 칠합니다.
+
+    소매·깃·무늬만 물들여서는 몸통 면적(유니폼의 70%)을 못 이겨서 팀이 전혀
+    안 떠올랐습니다("마드리드인지 잘 모르겠다"). 운용사는 이름표 배경 ·
+    상의 테두리 · 가슴 두 글자에서 계속 보입니다.
+    """
+    assert HEX.match(skin.body), f"{skin.id}.body 가 비었습니다"
+    assert skin.to_dict()["body"] == skin.body
+
+
+@pytest.mark.parametrize("skin", skins.SKINS, ids=lambda s: s.id)
+def test_body_and_pattern_are_not_the_same_colour(skin):
+    """몸통과 무늬가 같은 색이면 무늬가 안 보입니다(에러는 안 납니다)."""
+    if skin.body and skin.pattern != "plain":
+        pc = skin.pattern_color or skin.sleeve
+        assert pc.upper() != skin.body.upper(), f"{skin.id}: 무늬가 몸통에 묻힙니다"
+
+
+def test_hose_still_has_no_issuer_colour():
+    """하의에 운용사 색이 새어 들어가면 카드마다 달라져서 한 팀으로 안 보입니다."""
     for sk in skins.SKINS:
         d = sk.to_dict()
-        # 몸통색을 뜻하는 키가 아예 없어야 합니다 (kit.main 은 pitch_kit 이 정합니다)
-        assert not any(k in d for k in ("main", "body", "kitMain", "bodyColor"))
-        # 하의에도 운용사 색이 새어 들어가면 안 됩니다
         assert d["shorts"] and d["socks"]
-    # 소매·깃·무늬는 있어야 스킨이 티가 납니다
     assert skins.get("tyneside-stripes").pattern == "stripes"
     assert skins.get("glasgow-hoops").pattern == "hoops"
+    assert skins.get("bavaria-red").pattern == "diamonds"   # 바이에른 주기 문양
 
 
 def test_mow_patterns_are_actually_varied():
@@ -278,3 +307,87 @@ def test_badge_is_a_place_code_not_a_club_abbreviation(skin):
     banned = {"LFC", "MUFC", "MCFC", "PSG", "BVB", "FCB", "AFC", "THFC", "CFC",
               "ACM", "SSC", "ASR", "NUFC", "RMA"}
     assert skin.badge.upper() not in banned, f"{skin.id}: 구단 약칭 {skin.badge}"
+
+
+@pytest.mark.parametrize("skin", skins.SKINS, ids=lambda s: s.id)
+def test_badge_flag_is_drawable(skin):
+    """프론트엔드가 모르는 badge_dir 이면 **조용히 세로띠로 떨어집니다.**
+    색 오타도 CSS/canvas 에서 조용히 무시됩니다."""
+    assert skin.badge_dir in skins.BADGE_DIRS, f"{skin.id}.badge_dir={skin.badge_dir}"
+    for c in skin.badge_bars:
+        assert HEX.match(c), f"{skin.id}.badge_bars {c}"
+    # 십자·X·마름모는 "바탕색 + 문양색" 두 개가 반드시 있어야 그려집니다.
+    if skin.badge_dir in ("cross", "saltire", "diamond"):
+        assert len(skin.badge_bars) == 2, f"{skin.id}: {skin.badge_dir} 는 색 2개"
+
+
+@pytest.mark.parametrize("skin", skins.SKINS[1:], ids=lambda s: s.id)
+def test_club_skins_have_a_public_flag_behind_the_badge(skin):
+    """센터서클에는 **국기·지역기**만 깝니다.
+
+    구단 엠블럼은 저작물이고, 엠블럼을 연상시키는 도형도 그리지 않습니다.
+    도시 상징 도형(곰·벌·화산 …)을 시안으로 보여드렸지만 사용자가
+    "카탈루냐 깃발만 예쁘다" 고 해서 깃발 쪽으로 갔습니다.
+    """
+    assert len(skin.badge_bars) >= 2, f"{skin.id} 배지 깃발이 없습니다"
+
+
+def test_default_grass_has_no_flag():
+    """기본 잔디는 나라와 무관합니다. 깃발을 깔면 뜬금없습니다."""
+    assert skins.get(skins.DEFAULT_ID).badge_bars == ()
+
+
+# ------------------------------------------- 프론트엔드가 정말 알아듣는가
+# 파이썬 쪽에 값을 추가해도 index.html 에 분기가 없으면 **조용히 기본으로
+# 떨어집니다.** 에러가 안 나서 눈으로 볼 때까지 모릅니다. 그걸 여기서 잡습니다.
+import os
+
+_FRONTEND = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "components", "football_pitch", "frontend", "index.html",
+)
+with open(_FRONTEND, encoding="utf-8") as _f:
+    _HTML = _f.read()
+
+
+@pytest.mark.parametrize("pattern", [p for p in skins.PATTERNS if p != "plain"])
+def test_frontend_draws_every_pattern_on_screen_and_in_the_capture(pattern):
+    """화면(patternSVG)과 📸 캡처(drawPattern) 둘 다 알아야 합니다."""
+    screen = _HTML.split("function patternSVG", 1)[1].split("\nfunction ", 1)[0]
+    canvas = _HTML.split("function drawPattern", 1)[1].split("\nfunction ", 1)[0]
+    assert f'"{pattern}"' in screen, f"patternSVG 에 {pattern} 분기가 없습니다"
+    assert f'"{pattern}"' in canvas, f"drawPattern 에 {pattern} 분기가 없습니다"
+
+
+@pytest.mark.parametrize("direction", skins.BADGE_DIRS)
+def test_frontend_knows_every_badge_direction(direction):
+    """badgeParts 하나를 화면과 캡처가 같이 씁니다 — 거기에 분기가 있어야 합니다."""
+    parts = _HTML.split("function badgeParts", 1)[1].split("\nfunction ", 1)[0]
+    if direction in ("v", "h"):
+        assert f'"{direction}"' in parts or "bars.map" in parts
+    else:
+        assert f'"{direction}"' in parts, f"badgeParts 에 {direction} 분기가 없습니다"
+
+
+def test_frontend_reads_the_new_skin_keys():
+    """to_dict 의 키와 index.html 이 읽는 이름이 어긋나면 조용히 무시됩니다."""
+    for key in ("sk.body", "sk.badgeBars", "sk.badgeDir"):
+        assert key in _HTML, f"index.html 이 {key} 를 안 읽습니다"
+
+
+def test_body_falls_back_to_the_issuer_colour_in_the_frontend():
+    """`body` 가 비면 운용사 색으로 떨어져야 기본 스킨이 예전 그대로 보입니다."""
+    fn = _HTML.split("function bodyOf", 1)[1].split("\nfunction ", 1)[0]
+    assert "sk.body" in fn and "kit.main" in fn
+
+
+@pytest.mark.parametrize("skin", skins.SKINS[1:], ids=lambda s: s.id)
+def test_number_and_brand_read_on_the_team_body(skin):
+    """몸통을 팀 색으로 칠하면 **등번호와 가슴 두 글자(운용사)** 가 묻힐 수 있습니다.
+
+    운용사 기본 글자색(kit.text)을 그대로 쓰면 흰 몸통에 흰 글자가 됩니다.
+    프론트엔드(jerseySVG)는 그래서 `textOn(body)` 로 다시 고릅니다 —
+    흑·백 중 실제 대비가 높은 쪽. 여기서 WCAG AA(4.5)를 넘는지 확인합니다.
+    """
+    ratio = _contrast(skin.body, _text_on(skin.body))
+    assert ratio >= 4.5, f"{skin.id}: 몸통 {skin.body} 위 글자 대비 {ratio:.2f}"
