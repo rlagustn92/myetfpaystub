@@ -285,3 +285,18 @@ def test_paste_import_never_keeps_an_account_number(offline, fake_search):
     text = " ".join(m.value for m in at.markdown)
     assert "123-45-678901" not in text
     assert "계좌번호" in text          # 버렸다고 알려는 줍니다
+
+
+def test_every_grid_size_the_app_uses_exists_in_the_css():
+    """`grid_html(cards, cols=N)` 을 쓰는데 CSS 에 `.grid.cN` 이 없으면 카드가
+    **한 줄로 쭉 쌓입니다.** 에러가 안 나서 화면을 볼 때까지 모릅니다
+    (실제로 종목별 상세의 5칸이 그랬습니다)."""
+    import re
+
+    app_src = open(APP, encoding="utf-8").read()
+    css = open(os.path.join(os.path.dirname(APP), "components", "ui.py"),
+               encoding="utf-8").read()
+    used = {int(n) for n in re.findall(r"cols=(\d+)", app_src)}
+    used |= {int(n) for n in re.findall(r"grid_html\([^)]*?,\s*(\d+)\)", app_src)}
+    for n in used:
+        assert f".grid.c{n}" in css, f"grid_html(cols={n}) 을 쓰는데 CSS 에 .grid.c{n} 이 없습니다"

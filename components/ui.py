@@ -113,6 +113,7 @@ CSS = """
   .grid.c2 { grid-template-columns:repeat(2,1fr); }
   .grid.c3 { grid-template-columns:repeat(3,1fr); }
   .grid.c4 { grid-template-columns:repeat(4,1fr); }
+  .grid.c5 { grid-template-columns:repeat(5,1fr); }
 
   /* ---- 값 카드 — 테두리 없이 은은한 채움만 ---- */
   .kcard { background:var(--tint); border:none; border-radius:14px;
@@ -250,12 +251,17 @@ CSS = """
                writing-mode:horizontal-tb; font-variant-numeric:tabular-nums; }
   .bars .col.now .lab { color:var(--ink); font-weight:700; }
 
+  /* 좁아지면 접습니다. `.cN` 이 CSS 에 없으면 한 줄로 쌓여 버리므로,
+     새 칸수를 쓸 때는 위의 정의와 아래 접기 규칙에 **둘 다** 넣어야 합니다. */
+  @media (max-width: 1000px) {
+    .grid.c5 { grid-template-columns:repeat(3,1fr); }
+  }
   @media (max-width: 720px) {
-    .grid.c3, .grid.c4 { grid-template-columns:repeat(2,1fr); }
+    .grid.c3, .grid.c4, .grid.c5 { grid-template-columns:repeat(2,1fr); }
   }
   @media (max-width: 460px) {
     .panel { padding:16px 15px; border-radius:15px; }
-    .grid.c2, .grid.c3, .grid.c4 { grid-template-columns:1fr; }
+    .grid.c2, .grid.c3, .grid.c4, .grid.c5 { grid-template-columns:1fr; }
     .paycard .v { font-size:2rem; }
     .kcard .v { font-size:1.3rem; }
   }
