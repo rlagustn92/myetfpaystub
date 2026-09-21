@@ -26,14 +26,23 @@ python -m pytest -m network  # ⭐ 이게 제일 중요합니다 (아래 설명)
 
 ## 1. GitHub 저장소
 
+**2026-09-21 완료.** `https://github.com/rlagustn92/myetfpaystub` (**비공개**),
+기본 브랜치 `main`.
+
+처음부터 다시 만든다면:
+
 ```bash
-git remote add origin https://github.com/<계정>/<저장소>.git
 git branch -M main
+gh repo create <저장소> --private --source=. --remote=origin
 git push -u origin main
 ```
 
-저장소는 **공개(public)** 여도 됩니다. 개인정보가 들어가는 파일이 없습니다
-(투자 정보는 사용자 브라우저에만 남습니다). 다만 §3 의 `COUNTER_NS` 는 예외입니다.
+공개(public)로 해도 됩니다 — 개인정보가 들어가는 파일이 없습니다(투자 정보는
+사용자 브라우저에만 남습니다). 다만 §3 의 `COUNTER_NS` 는 예외라 Secrets 로 뺍니다.
+
+⚠ **비공개 저장소를 고르면** share.streamlit.io 에서 GitHub 로 로그인할 때
+**비공개 저장소 접근까지 승인**해야 목록에 뜹니다. 승인 화면에서 한 번 더
+물어보는데, 거기서 건너뛰면 저장소가 안 보여서 "저장소가 없다" 로 보입니다.
 
 ## 2. share.streamlit.io
 
