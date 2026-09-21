@@ -247,3 +247,41 @@ def test_tidy_button_rearranges_the_pitch(offline, fake_search):
     assert not at.exception
     text = " ".join(m.value for m in at.markdown)
     assert "지금 배치" in text          # 포메이션 안내가 보입니다
+
+
+def test_paste_import_registers_many_holdings_at_once(offline, fake_search):
+    """진입장벽 — 증권사 세 곳에 종목이 열 개면 쉰 번을 타이핑해야 합니다.
+    붙여넣기 한 번으로 끝나야 합니다."""
+    at = AppTest.from_file(APP, default_timeout=120).run()
+
+    box = [t for t in at.text_area if "붙여넣기" in t.label]
+    assert box, "종목 관리에 붙여넣기 칸이 있어야 합니다"
+
+    box[0].set_value(
+        "종목코드\t수량\t평균단가\n"
+        "069500\t100\t32,000\n"
+        "458730\t50\t11,200"
+    ).run()
+    assert not at.exception
+
+    btn = [b for b in at.button if "한 번에 등록" in b.label]
+    assert btn, "읽어낸 줄이 있으면 등록 버튼이 나와야 합니다"
+    btn[0].click().run()
+    assert not at.exception
+
+    p = at.session_state["store"].active()
+    assert len(p.holdings) == 2
+    assert {h.ticker for h in p.holdings} == {"069500", "458730"}
+    assert p.holdings[0].shares == 100
+
+
+def test_paste_import_never_keeps_an_account_number(offline, fake_search):
+    """절대규칙 6 — 계좌번호는 저장은커녕 화면에도 안 올립니다."""
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    box = [t for t in at.text_area if "붙여넣기" in t.label][0]
+    box.set_value("종목코드\t계좌번호\t수량\t평균단가\n"
+                  "069500\t123-45-678901\t100\t32,000").run()
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "123-45-678901" not in text
+    assert "계좌번호" in text          # 버렸다고 알려는 줍니다

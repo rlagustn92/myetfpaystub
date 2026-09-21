@@ -53,6 +53,7 @@ from services import (
     cashflow_service as CF,
     distribution_service as DS,
     fx_service,
+    import_service,
     link_service,
     naver_link_service,
     pitch_service,
@@ -902,9 +903,100 @@ def _on_price_changed() -> None:
         st.session_state.get("add_price_text", ""))
 
 
+def render_paste_import() -> None:
+    """증권사 잔고를 **복사해서 붙여넣기** 로 한 번에 등록.
+
+    이 앱의 가장 큰 진입장벽은 일일이 입력하는 것입니다. 증권사 세 곳에
+    종목이 열 개면 쉰 번을 타이핑해야 하고, 거기서 대부분 그만둡니다.
+
+    ⚠ 증권사 화면을 긁으면 **계좌번호가 딸려옵니다.** 이 앱이 절대 안 받는
+      정보라(절대규칙 6) `import_service` 가 **읽는 단계에서 버립니다.**
+      화면에도 안 올라갑니다.
+    """
+    with st.expander("📋 　증권사 잔고 붙여넣기　— 한 번에 등록하기 👆", expanded=False):
+        note("증권사 앱이나 HTS 의 잔고 화면을 그대로 긁어서(Ctrl+A, Ctrl+C) "
+             "아래에 붙여넣으세요. 엑셀에서 복사해도 됩니다.")
+        st.code("KODEX 200            069500    100    32,000\n"
+                "TIGER 미국배당다우존스   458730     50    11,200",
+                language=None)
+
+        text = st.text_area("붙여넣기", height=150, key="imp_text",
+                            placeholder="여기에 붙여넣으세요")
+        c1, c2 = st.columns(2)
+        with c1:
+            broker = st.selectbox("어느 증권사인가요?",
+                                  broker_options() + ["+ 직접 입력"], key="imp_broker")
+            if broker == "+ 직접 입력":
+                broker = st.text_input("증권사 이름", key="imp_broker_custom").strip()
+        with c2:
+            account = st.selectbox("어떤 계좌인가요?",
+                                   account_options() + ["+ 직접 입력"], key="imp_account")
+            if account == "+ 직접 입력":
+                account = st.text_input("계좌 이름", key="imp_account_custom").strip()
+
+        if not text.strip():
+            return
+
+        got = import_service.parse(text)
+        if got.dropped_account_numbers:
+            note(f"🔒 계좌번호처럼 보이는 것 {got.dropped_account_numbers}개는 "
+                 f"읽지 않고 버렸습니다. 이 앱은 계좌번호를 저장하지 않습니다.")
+
+        if got.good:
+            st.markdown(
+                "".join(
+                    row_html(r.name or r.ticker,
+                             f"{r.ticker or '코드 확인 필요'} · "
+                             f"{'미국' if r.market == MARKET_US else '한국'}",
+                             f"{F.shares(r.shares)}",
+                             f"평균 {F.native_amt(r.avg_price, 'USD' if r.market == MARKET_US else 'KRW')}"
+                             if r.avg_price else "평균가 없음")
+                    for r in got.good
+                ),
+                unsafe_allow_html=True,
+            )
+        if got.bad:
+            warn(f"{len(got.bad)}줄은 못 읽었습니다 — "
+                 + " · ".join(f"{(r.raw or '')[:24]} ({r.problem})" for r in got.bad[:3])
+                 + ("…" if len(got.bad) > 3 else "")
+                 + " 이 줄들은 아래에서 하나씩 넣어 주세요.")
+
+        if got.good and st.button(f"✅ {len(got.good)}개 한 번에 등록",
+                                  type="primary", width="stretch"):
+            added = 0
+            for r in got.good:
+                # 코드를 못 읽었으면 이름으로 찾아봅니다. 못 찾으면 건너뜁니다 —
+                # 없는 종목코드를 지어내지 않습니다(절대규칙 1).
+                ticker, market, name = r.ticker, r.market, r.name
+                if not ticker:
+                    hits = search_service.search(r.name, limit=1)
+                    if not hits:
+                        continue
+                    ticker, market, name = hits[0].ticker, hits[0].market, hits[0].name
+                portfolio.add(Holding(
+                    ticker=ticker, market=market, name=name or ticker,
+                    broker=broker or "", account=account or "", account_type=account or "",
+                    shares=float(r.shares or 0), avg_price=float(r.avg_price or 0),
+                ))
+                added += 1
+            if broker and broker not in portfolio.brokers \
+                    and broker not in config.DEFAULT_BROKERS:
+                portfolio.brokers.append(broker)
+            if account and account not in portfolio.account_types \
+                    and account not in config.DEFAULT_ACCOUNT_TYPES:
+                portfolio.account_types.append(account)
+            st.session_state["imp_done"] = added
+            st.rerun()
+
+
 def render_manage() -> None:
     # ⚠ 위젯을 만들기 **전에** 초기화해야 합니다. 만든 뒤에 session_state 를
     #    건드리면 Streamlit 이 예외를 냅니다.
+    done = st.session_state.pop("imp_done", None)
+    if done:
+        st.success(f"{done}개 종목을 등록했습니다.")
+        st.session_state["imp_text"] = ""
+
     if st.session_state.pop("add_reset", False):
         st.session_state["add_query"] = ""
         _reset_amount_inputs()
@@ -913,7 +1005,9 @@ def render_manage() -> None:
     st.session_state.setdefault("add_qty", 0.0)
     st.session_state.setdefault("add_price_text", "")
 
-    section("➕ 내 ETF 추가", "다섯 가지만 넣으면 됩니다. 처음 산 날짜는 안 물어봅니다.")
+    render_paste_import()
+
+    section("➕ 하나씩 추가", "다섯 가지만 넣으면 됩니다. 처음 산 날짜는 안 물어봅니다.")
 
     q = st.text_input("어떤 ETF 인가요?",
                       placeholder="커버 액티 · 코덱스 200 · SCHD · 069500",
