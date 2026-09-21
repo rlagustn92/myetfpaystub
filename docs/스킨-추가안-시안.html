@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>스킨 추가안 시안 — MY ETF 급여명세서</title>
+<style>
+  :root {
+    --ink:#111418; --soft:#5C6470; --faint:#8A9199; --line:#E7EAEE;
+    --card:#fff; --bg:#F5F7FA; --brand:#1454FF;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; padding:24px 16px 64px; background:var(--bg); color:var(--ink);
+    font-family:"Segoe UI","Noto Sans KR","맑은 고딕",system-ui,sans-serif;
+    line-height:1.55;
+  }
+  .wrap { max-width:1080px; margin:0 auto; }
+  h1 { font-size:1.5rem; font-weight:800; letter-spacing:-.02em; margin:0 0 4px; }
+  .lead { color:var(--soft); font-size:.92rem; margin:0 0 28px; }
+  h2 { font-size:1.15rem; font-weight:800; margin:36px 0 2px; letter-spacing:-.01em; }
+  .sub { color:var(--faint); font-size:.85rem; margin:0 0 14px; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:16px;
+           padding:18px 20px; margin-bottom:12px; }
+  .ab { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:760px){ .ab { grid-template-columns:1fr; } }
+  .side { border:1px solid var(--line); border-radius:12px; padding:14px; background:#fff; }
+  .side.now { background:#FAFBFC; }
+  .tag { display:inline-block; font-size:.72rem; font-weight:800; border-radius:999px;
+         padding:2px 9px; margin-bottom:10px; }
+  .tag.now { background:#EEF1F4; color:#6B7480; }
+  .tag.new { background:#E7F0FF; color:var(--brand); }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; }
+  .unit { text-align:center; width:96px; }
+  .unit .nm { font-size:.7rem; font-weight:700; color:#fff; border-radius:5px;
+              padding:2px 4px; margin-top:5px; white-space:nowrap; overflow:hidden;
+              text-overflow:ellipsis; }
+  .unit .cap { font-size:.68rem; color:var(--faint); margin-top:4px; }
+  .verdict { font-size:.86rem; color:var(--soft); margin-top:12px;
+             border-top:1px dashed var(--line); padding-top:10px; }
+  .verdict b { color:var(--ink); }
+  .pick { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 18px; }
+  .pick button { font:inherit; font-size:.78rem; font-weight:700; cursor:pointer;
+                 border:1px solid var(--line); background:#fff; color:var(--soft);
+                 border-radius:999px; padding:5px 12px; }
+  .pick button.on { background:var(--brand); border-color:var(--brand); color:#fff; }
+  .note { font-size:.8rem; color:var(--faint); }
+  .warnbox { background:#FFF8E6; border:1px solid #F2D48A; border-radius:12px;
+             padding:10px 14px; font-size:.85rem; color:#7A5B00; margin-top:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>스킨 추가안 3가지 — 비교 시안</h1>
+  <p class="lead">
+    왼쪽이 <b>지금(v0.5.0)</b>, 오른쪽이 <b>추가안</b>입니다.
+    유니폼 도형·태극·스킨 색은 전부 실제 코드에서 가져온 값이라,
+    보이는 그대로 나옵니다. 아래 버튼으로 스킨을 바꿔 보세요.
+  </p>
+
+  <div class="pick" id="pick"></div>
+
+  <!-- ① 양말·반바지 -->
+  <h2>① 양말 · 반바지 추가</h2>
+  <p class="sub">지금 카드는 상의만 있습니다. 하의를 붙이면 "선수" 같아지지만 카드가 세로로 길어집니다.</p>
+  <div class="panel">
+    <div class="ab">
+      <div class="side now">
+        <span class="tag now">지금 — 상의만</span>
+        <div class="row" id="kitNow"></div>
+      </div>
+      <div class="side">
+        <span class="tag new">추가안 — 상의 + 반바지 + 양말</span>
+        <div class="row" id="kitNew"></div>
+      </div>
+    </div>
+    <div class="verdict" id="kitVerdict"></div>
+  </div>
+
+  <!-- ② 관중석 -->
+  <h2>② 관중석에 관중 점묘</h2>
+  <p class="sub">판 바깥 배경입니다. 지금은 단색이고, 추가안은 팀 색 점을 흩뿌려 관중을 표현합니다.</p>
+  <div class="panel">
+    <div class="ab">
+      <div class="side now">
+        <span class="tag now">지금 — 단색 배경</span>
+        <div id="standNow"></div>
+      </div>
+      <div class="side">
+        <span class="tag new">추가안 — 관중 점묘</span>
+        <div id="standNew"></div>
+      </div>
+    </div>
+    <div class="verdict" id="standVerdict"></div>
+  </div>
+
+  <!-- ③ 골대 뒤 배너 -->
+  <h2>③ 골대 뒤 응원 배너</h2>
+  <p class="sub">위(상대 골문)·아래(우리 골문) 뒤쪽에 팀 색 띠와 글자를 넣습니다.</p>
+  <div class="panel">
+    <div class="ab">
+      <div class="side now">
+        <span class="tag now">지금 — 없음</span>
+        <div id="bannerNow"></div>
+      </div>
+      <div class="side">
+        <span class="tag new">추가안 — 골대 뒤 배너</span>
+        <div id="bannerNew"></div>
+      </div>
+    </div>
+    <div class="verdict" id="bannerVerdict"></div>
+  </div>
+
+  <div class="warnbox">
+    ※ 이 문서는 <b>결정용 시안</b>입니다. 아직 앱에 들어간 기능이 아닙니다.
+    고르신 것만 실제로 구현합니다.
+  </div>
+  <p class="note" style="margin-top:14px">
+    유니폼 몸통 바탕색(= 운용사), 가슴 태극(= 한국 종목), 성조기(= 미국 종목)는
+    어느 안에서도 건드리지 않습니다.
+  </p>
+</div>
+
+<script>
+/* 실제 코드(components/football_pitch/frontend/index.html)에서 가져온 도형 */
+const SHIRT_PATH = "M34 6 L22 2 L2 22 L16 36 L24 30 L24 106 A4 4 0 0 0 28 110 " +
+                   "L72 110 A4 4 0 0 0 76 106 L76 30 L84 36 L98 22 L78 2 L66 6 " +
+                   "C62 14 56 17 50 17 C44 17 38 14 34 6 Z";
+const COLLAR_PATH = "M34 6 C38 14 44 17 50 17 C56 17 62 14 66 6 L70 8 " +
+                    "C65 19 58 22 50 22 C42 22 35 19 30 8 Z";
+const TAEGEUK_Y = 34, TAEGEUK_R = 9;
+const TAEGEUK_BLUE = "#0047A0", TAEGEUK_RED = "#CD2E3A";
+const US_RED = "#C8102E", US_NAVY = "#0A2B5C", US_BODY = "#F8F8F4";
+
+/* 실제 skins.py 에서 내보낸 값 */
+const SKINS = [
+ {
+  "id": "classic",
+  "name": "Classic Green",
+  "turfA": "#2F8F3F",
+  "turfB": "#2B8639",
+  "mow": "bands",
+  "line": "rgba(255,255,255,0.78)",
+  "slot": "rgba(255,255,255,0.45)",
+  "frameA": "#1F6F3A",
+  "frameB": "#1F6F3A",
+  "stand": "#EDF1F5",
+  "accent": "#FFCF33",
+  "sleeve": "",
+  "trim": "",
+  "pattern": "plain",
+  "patternColor": "",
+  "korean": "기본 잔디"
+ },
+ {
+  "id": "london-red",
+  "name": "London Red Edition",
+  "turfA": "#2E8B3E",
+  "turfB": "#2A8238",
+  "mow": "bands",
+  "line": "rgba(255,255,255,0.82)",
+  "slot": "rgba(255,255,255,0.45)",
+  "frameA": "#C8102E",
+  "frameB": "#FFFFFF",
+  "stand": "#F4E3E5",
+  "accent": "#E8C34A",
+  "sleeve": "#FFFFFF",
+  "trim": "#E8C34A",
+  "pattern": "plain",
+  "patternColor": "#FFFFFF",
+  "korean": "런던 레드 — 붉은 몸통에 흰 소매"
+ },
+ {
+  "id": "tyneside-stripes",
+  "name": "Tyneside Stripes Edition",
+  "turfA": "#2A8438",
+  "turfB": "#267B33",
+  "mow": "vertical",
+  "line": "rgba(255,255,255,0.86)",
+  "slot": "rgba(255,255,255,0.48)",
+  "frameA": "#241F20",
+  "frameB": "#FFFFFF",
+  "stand": "#ECECEE",
+  "accent": "#41B6E6",
+  "sleeve": "#241F20",
+  "trim": "#FFFFFF",
+  "pattern": "stripes",
+  "patternColor": "#241F20",
+  "korean": "타인사이드 — 검정·흰 세로줄"
+ },
+ {
+  "id": "ruhr-yellow",
+  "name": "Ruhr Yellow Edition",
+  "turfA": "#2D8C3D",
+  "turfB": "#298337",
+  "mow": "diagonal",
+  "line": "rgba(255,255,255,0.86)",
+  "slot": "rgba(255,255,255,0.48)",
+  "frameA": "#FDE100",
+  "frameB": "#111111",
+  "stand": "#FAF3D6",
+  "accent": "#FDE100",
+  "sleeve": "#111111",
+  "trim": "#FDE100",
+  "pattern": "plain",
+  "patternColor": "#111111",
+  "korean": "루르 — 노랑과 검정"
+ },
+ {
+  "id": "glasgow-hoops",
+  "name": "Glasgow Hoops Edition",
+  "turfA": "#2C8A3C",
+  "turfB": "#288136",
+  "mow": "bands",
+  "line": "rgba(255,255,255,0.86)",
+  "slot": "rgba(255,255,255,0.48)",
+  "frameA": "#018749",
+  "frameB": "#FFFFFF",
+  "stand": "#E4F1E8",
+  "accent": "#FFD700",
+  "sleeve": "#018749",
+  "trim": "#FFD700",
+  "pattern": "hoops",
+  "patternColor": "#018749",
+  "korean": "글래스고 — 초록·흰 가로줄"
+ },
+ {
+  "id": "paris-navy",
+  "name": "Paris Navy Edition",
+  "turfA": "#2A8438",
+  "turfB": "#267B33",
+  "mow": "bands",
+  "line": "rgba(255,255,255,0.84)",
+  "slot": "rgba(255,255,255,0.46)",
+  "frameA": "#0B2B57",
+  "frameB": "#DA291C",
+  "stand": "#E5E9F1",
+  "accent": "#FFFFFF",
+  "sleeve": "#0B2B57",
+  "trim": "#FFFFFF",
+  "pattern": "center",
+  "patternColor": "#DA291C",
+  "korean": "파리 — 감청색에 붉은 중앙띠"
+ },
+ {
+  "id": "turin-monochrome",
+  "name": "Turin Monochrome Edition",
+  "turfA": "#2A8036",
+  "turfB": "#267731",
+  "mow": "bands",
+  "line": "rgba(255,255,255,0.88)",
+  "slot": "rgba(255,255,255,0.5)",
+  "frameA": "#1A1A1A",
+  "frameB": "#FFFFFF",
+  "stand": "#EDEDEF",
+  "accent": "#C8A24A",
+  "sleeve": "#1A1A1A",
+  "trim": "#FFFFFF",
+  "pattern": "stripes",
+  "patternColor": "#1A1A1A",
+  "korean": "토리노 — 흑백 세로줄"
+ },
+ {
+  "id": "catalonia-claret",
+  "name": "Catalonia Claret Edition",
+  "turfA": "#2C8A3C",
+  "turfB": "#288136",
+  "mow": "vertical",
+  "line": "rgba(255,255,255,0.82)",
+  "slot": "rgba(255,255,255,0.45)",
+  "frameA": "#A50044",
+  "frameB": "#004D98",
+  "stand": "#F0E4EA",
+  "accent": "#EDBB00",
+  "sleeve": "#004D98",
+  "trim": "#EDBB00",
+  "pattern": "stripes",
+  "patternColor": "#004D98",
+  "korean": "카탈루냐 — 자주·감청 세로줄"
+ }
+];
+
+/* 실제 pitch_kit.py 의 운용사 색 (몸통 = 정보) */
+const SAMPLE = [
+  { label:"200",        brandTag:"KO", main:"#1428A0", dark:"#0A1660", text:"#FFFFFF", us:false, num:32 },
+  { label:"미배당다우",   brandTag:"AC", main:"#E4002B", dark:"#8C0019", text:"#FFFFFF", us:false, num:13 },
+  { label:"미국S&P500",  brandTag:"TI", main:"#FF6B00", dark:"#9E4200", text:"#FFFFFF", us:false, num:21 },
+  { label:"SCHD",       brandTag:"",   main:US_BODY,   dark:US_NAVY,   text:US_NAVY,   us:true,  num:25 },
+];
+
+let skin = SKINS[0];
+
+function esc(s){ return String(s).replace(/[&<>"']/g, c => (
+  {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function taegeuk(cx, cy, r){
+  const a = -45 * Math.PI/180;
+  const d = `M ${cx - r*Math.cos(a)} ${cy - r*Math.sin(a)} ` +
+            `A ${r} ${r} 0 0 1 ${cx + r*Math.cos(a)} ${cy + r*Math.sin(a)} ` +
+            `A ${r/2} ${r/2} 0 0 1 ${cx} ${cy} ` +
+            `A ${r/2} ${r/2} 0 0 0 ${cx - r*Math.cos(a)} ${cy - r*Math.sin(a)} Z`;
+  return `<circle cx="${cx}" cy="${cy}" r="${r+1.6}" fill="#fff"/>` +
+         `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${TAEGEUK_BLUE}"/>` +
+         `<path d="${d}" fill="${TAEGEUK_RED}"/>`;
+}
+
+function patternSVG(kind, color){
+  if(!kind || kind==="plain" || !color) return "";
+  const c = esc(color);
+  if(kind==="stripes") return `<rect x="8" y="0" width="13" height="118" fill="${c}"/>`+
+    `<rect x="43" y="0" width="13" height="118" fill="${c}"/>`+
+    `<rect x="78" y="0" width="13" height="118" fill="${c}"/>`;
+  if(kind==="hoops") return `<rect x="0" y="16" width="100" height="13" fill="${c}"/>`+
+    `<rect x="0" y="46" width="100" height="13" fill="${c}"/>`+
+    `<rect x="0" y="76" width="100" height="13" fill="${c}"/>`;
+  if(kind==="center") return `<rect x="38" y="0" width="24" height="118" fill="${c}"/>`;
+  return "";
+}
+
+/* 상의 (지금과 동일) --------------------------------------------------- */
+function shirtSVG(k, uid){
+  let inner, numFill;
+  if(k.us){
+    inner = `<rect x="0" y="0" width="100" height="118" fill="${US_BODY}"/>`+
+      `<rect x="0" y="0" width="24" height="40" fill="${US_RED}"/>`+
+      `<rect x="76" y="0" width="24" height="40" fill="${US_RED}"/>`+
+      `<path d="${COLLAR_PATH}" fill="${esc(skin.trim||US_NAVY)}"/>`+
+      `<rect x="27" y="28" width="46" height="28" fill="#fff" stroke="#B22234" stroke-width="1"/>`+
+      `<rect x="27" y="28" width="20" height="14" fill="#3C3B6E"/>`+
+      `<rect x="47" y="31" width="26" height="3" fill="#B22234"/>`+
+      `<rect x="47" y="38" width="26" height="3" fill="#B22234"/>`+
+      `<rect x="27" y="45" width="46" height="3" fill="#B22234"/>`+
+      `<rect x="27" y="52" width="46" height="3" fill="#B22234"/>`;
+    numFill = US_NAVY;
+  } else {
+    inner = `<rect x="0" y="0" width="100" height="118" fill="${k.main}"/>`+
+      patternSVG(skin.pattern, skin.patternColor)+
+      (skin.sleeve ? `<rect x="0" y="0" width="24" height="40" fill="${esc(skin.sleeve)}"/>`+
+        `<rect x="76" y="0" width="24" height="40" fill="${esc(skin.sleeve)}"/>` : "")+
+      (skin.trim ? `<path d="${COLLAR_PATH}" fill="${esc(skin.trim)}"/>` : "")+
+      taegeuk(50, TAEGEUK_Y, TAEGEUK_R);
+    numFill = k.text;
+  }
+  const halo = k.us ? US_BODY : k.main;
+  return `<svg viewBox="0 0 100 118" style="width:100%;display:block">
+    <defs><clipPath id="c${uid}"><path d="${SHIRT_PATH}"/></clipPath></defs>
+    <g clip-path="url(#c${uid})">${inner}</g>
+    <path d="${SHIRT_PATH}" fill="none" stroke="${k.dark}" stroke-width="3"/>
+    ${(!k.us && k.brandTag) ? `<text x="50" y="60" text-anchor="middle" font-size="12"
+        font-weight="700" fill="${k.text}" opacity="0.75">${k.brandTag}</text>` : ""}
+    <text x="50" y="98" text-anchor="middle" font-weight="700" font-size="30"
+      stroke="${halo}" stroke-width="3.2" stroke-linejoin="round" paint-order="stroke"
+      fill="${numFill}">${k.num}<tspan font-size="15">%</tspan></text>
+  </svg>`;
+}
+
+/* 상의 + 반바지 + 양말 (추가안) ---------------------------------------- */
+function fullKitSVG(k, uid){
+  const short = skin.sleeve || k.dark;      // 반바지 = 팀 색
+  const sock  = skin.trim || k.dark;        // 양말 = 깃 색
+  const body  = k.us ? US_BODY : k.main;
+  return `<div style="line-height:0">
+    ${shirtSVG(k, uid)}
+    <svg viewBox="0 0 100 62" style="width:100%;display:block;margin-top:-2px">
+      <!-- 반바지 -->
+      <path d="M22 0 L78 0 L76 26 L56 26 L50 12 L44 26 L24 26 Z"
+            fill="${esc(short)}" stroke="${k.dark}" stroke-width="2.5"/>
+      <!-- 양말 -->
+      <rect x="26" y="28" width="18" height="30" rx="4"
+            fill="${esc(sock)}" stroke="${k.dark}" stroke-width="2.5"/>
+      <rect x="56" y="28" width="18" height="30" rx="4"
+            fill="${esc(sock)}" stroke="${k.dark}" stroke-width="2.5"/>
+      <rect x="26" y="34" width="18" height="6" fill="${esc(body)}" opacity="0.85"/>
+      <rect x="56" y="34" width="18" height="6" fill="${esc(body)}" opacity="0.85"/>
+    </svg>
+  </div>`;
+}
+
+/* 미니 전술판 ----------------------------------------------------------- */
+function mowCss(){
+  const a = skin.turfA, b = skin.turfB;
+  if(skin.mow==="vertical") return `background-image:linear-gradient(90deg,${a} 50%,${b} 50%);background-size:12.5% 100%`;
+  if(skin.mow==="checks") return `background-image:linear-gradient(90deg,rgba(255,255,255,.055) 50%,rgba(0,0,0,.045) 50%),linear-gradient(0deg,${a} 50%,${b} 50%);background-size:25% 100%,100% 14.4%`;
+  if(skin.mow==="diagonal") return `background-image:repeating-linear-gradient(45deg,${a} 0 22px,${b} 22px 44px)`;
+  return `background-image:linear-gradient(0deg,${a} 50%,${b} 50%);background-size:100% 14.4%`;
+}
+
+function crowdCss(){
+  /* 관중 점묘 — 팀 색 점 세 겹 */
+  const c1 = skin.frameA, c2 = skin.frameB, base = skin.stand;
+  return `background-color:${base};background-image:` +
+    `radial-gradient(${c1} 1.1px, transparent 1.2px),` +
+    `radial-gradient(${c2} 1.1px, transparent 1.2px),` +
+    `radial-gradient(rgba(0,0,0,.18) 1px, transparent 1.1px);` +
+    `background-size:11px 11px, 11px 11px, 7px 7px;` +
+    `background-position:0 0, 5px 6px, 3px 2px`;
+}
+
+function miniPitch({crowd=false, banner=false}={}){
+  const bannerTop = banner ? `
+    <div style="position:absolute;left:8%;right:8%;top:3px;height:13px;border-radius:3px;
+      background:repeating-linear-gradient(90deg,${skin.frameA} 0 10px,${skin.frameB} 10px 20px);
+      display:flex;align-items:center;justify-content:center;
+      font-size:7.5px;font-weight:800;color:${skin.accent};letter-spacing:.12em">
+      상대 골문</div>` : "";
+  const bannerBot = banner ? `
+    <div style="position:absolute;left:8%;right:8%;bottom:3px;height:13px;border-radius:3px;
+      background:repeating-linear-gradient(90deg,${skin.frameB} 0 10px,${skin.frameA} 10px 20px);
+      display:flex;align-items:center;justify-content:center;
+      font-size:7.5px;font-weight:800;color:${skin.accent};letter-spacing:.12em">
+      내 진영</div>` : "";
+  return `
+  <div style="${crowd ? crowdCss() : 'background:'+skin.stand};padding:14px;border-radius:12px">
+    <div style="padding:6px;border-radius:10px;
+      background-image:repeating-linear-gradient(90deg,${skin.frameA} 0 12px,${skin.frameB} 12px 24px)">
+      <div style="position:relative;aspect-ratio:72/96;border-radius:7px;overflow:hidden;${mowCss()}">
+        <svg viewBox="0 0 1000 1400" preserveAspectRatio="none"
+             style="position:absolute;inset:0;width:100%;height:100%">
+          <rect x="10" y="700" width="980" height="690" fill="rgba(255,255,255,0.055)"/>
+          <rect x="10" y="10" width="980" height="1380" fill="none" stroke="${skin.line}" stroke-width="3"/>
+          <line x1="10" y1="700" x2="990" y2="700" stroke="${skin.line}" stroke-width="3"/>
+          <circle cx="500" cy="700" r="150" fill="none" stroke="${skin.line}" stroke-width="3"/>
+          <rect x="250" y="10" width="500" height="250" fill="none" stroke="${skin.line}" stroke-width="3"/>
+          <rect x="250" y="1140" width="500" height="250" fill="none" stroke="${skin.line}" stroke-width="3"/>
+        </svg>
+        ${bannerTop}${bannerBot}
+        <div style="position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);width:26%">
+          ${shirtSVG(SAMPLE[0], "m"+Math.random().toString(36).slice(2,7))}
+        </div>
+        <div style="position:absolute;left:24%;top:58%;transform:translate(-50%,-50%);width:26%">
+          ${shirtSVG(SAMPLE[1], "m"+Math.random().toString(36).slice(2,7))}
+        </div>
+        <div style="position:absolute;left:76%;top:58%;transform:translate(-50%,-50%);width:26%">
+          ${shirtSVG(SAMPLE[3], "m"+Math.random().toString(36).slice(2,7))}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function unit(html, k, cap){
+  return `<div class="unit">${html}
+    <div class="nm" style="background:${k.dark}">${esc(k.label)}</div>
+    ${cap ? `<div class="cap">${esc(cap)}</div>` : ""}</div>`;
+}
+
+function render(){
+  let i = 0;
+  document.getElementById("kitNow").innerHTML =
+    SAMPLE.map(k => unit(shirtSVG(k, "a"+(i++)), k)).join("");
+  document.getElementById("kitNew").innerHTML =
+    SAMPLE.map(k => unit(fullKitSVG(k, "b"+(i++)), k)).join("");
+
+  document.getElementById("standNow").innerHTML = miniPitch({});
+  document.getElementById("standNew").innerHTML = miniPitch({crowd:true});
+
+  document.getElementById("bannerNow").innerHTML = miniPitch({crowd:true});
+  document.getElementById("bannerNew").innerHTML = miniPitch({crowd:true, banner:true});
+
+  document.getElementById("kitVerdict").innerHTML =
+    "<b>보실 점</b> — 하의를 붙이면 카드 세로 길이가 <b>1.4배</b>가 됩니다(실측 140px → 197px). " +
+    "전술판 자리가 26개라 카드끼리 겹칠 수 있어서, 넣으려면 카드 폭을 줄이거나 " +
+    "슬롯 간격을 벌려야 합니다. 반바지는 소매 색, 양말은 깃 색을 씁니다.";
+  document.getElementById("standVerdict").innerHTML =
+    "<b>보실 점</b> — 점묘는 CSS 그라디언트 세 겹이라 <b>비용이 거의 없습니다.</b> " +
+    "다만 판 바깥이 좁으면(모바일) 잘 안 보입니다. 📸 캡처 이미지에도 같이 그리려면 " +
+    "캔버스 쪽 코드가 조금 늘어납니다.";
+  document.getElementById("bannerVerdict").innerHTML =
+    "<b>보실 점</b> — 팀 색이 가장 크게 드러나는 안입니다. 대신 판 <b>위아래를 " +
+    "26px 정도 먹습니다.</b> 지금도 '▲ 공격 방향' 바가 위아래에 있어서, 배너를 " +
+    "넣으려면 그 바와 합치는 게 깔끔합니다.";
+}
+
+/* 스킨 고르기 */
+const pick = document.getElementById("pick");
+SKINS.forEach((s, idx) => {
+  const b = document.createElement("button");
+  b.textContent = s.name.replace(" Edition", "");
+  b.onclick = () => {
+    skin = s;
+    [...pick.children].forEach(c => c.classList.remove("on"));
+    b.classList.add("on");
+    render();
+  };
+  if (idx === 0) b.classList.add("on");
+  pick.appendChild(b);
+});
+render();
+</script>
+</body>
+</html>
