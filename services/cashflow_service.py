@@ -59,6 +59,47 @@ class PayslipRow:
     def is_estimated(self) -> bool:
         return self.dist.status == config.STATUS_ESTIMATED
 
+    # ---- 세금 -------------------------------------------------------
+    # 계좌 유형에 따라 **이야기가 완전히 다릅니다.**
+    #   ISA·연금저축·IRP : 지급할 때 세금을 안 뗍니다(과세이연). 그대로 입금.
+    #   일반(위탁)      : 과세표준액의 15.4% 를 떼고 줍니다.
+    # 그래서 한 줄마다 계좌를 보고 갈라야 합니다. 포트폴리오 전체에 같은
+    # 세율을 먹이면 ISA 를 가진 사람에게 있지도 않은 세금을 보여주게 됩니다.
+
+    @property
+    def is_tax_deferred(self) -> bool:
+        """받을 때 세금을 안 떼는 계좌인가 (ISA·연금저축·IRP …)."""
+        text = f"{self.holding.account or ''} {self.holding.account_type or ''}".upper()
+        return any(w.upper() in text for w in config.TAX_DEFERRED_ACCOUNT_WORDS)
+
+    @property
+    def taxable_basis_krw(self) -> float:
+        """세금 계산에 쓰는 과세표준액.
+
+        ⚠ 운용사 미발표는 **0원으로 셉니다**(사용자 결정). 몇 건인지는
+          `tax_basis_note` 로 따로 알립니다.
+        """
+        return float(self.tax_basis_krw or 0.0)
+
+    @property
+    def withholding_krw(self) -> float | None:
+        """지급할 때 떼는 예상 세금. 세금을 안 떼는 계좌면 None.
+
+        ⚠ **예상입니다.** 금융소득종합과세 대상이거나 해외 종목 외국납부세액이
+          얽히면 달라집니다.
+        """
+        if self.is_tax_deferred:
+            return None
+        return self.taxable_basis_krw * config.WITHHOLDING_RATE
+
+    @property
+    def after_tax_krw(self) -> float | None:
+        """세금 떼고 실제로 들어올 것으로 보이는 금액."""
+        if self.amount_krw is None:
+            return None
+        tax = self.withholding_krw
+        return self.amount_krw - (tax or 0.0)
+
     @property
     def record_note(self) -> str:
         """지급기준일이 **다른 달**이면 그 사실을 적을 짧은 문구. 아니면 빈 문자열.
@@ -90,8 +131,6 @@ class PayslipRow:
         """
         if self.tax_basis_krw is not None:
             return ""
-        if not self.tax_basis_supported:
-            return config.TAX_BASIS_UNSUPPORTED
         return config.TAX_BASIS_UNPUBLISHED
 
     @property
@@ -109,6 +148,10 @@ class PeriodTotal:
     label: str = ""
     amount_krw: float = 0.0
     tax_basis_krw: float = 0.0
+    # 세금을 안 떼고 그대로 들어오는 금액 (ISA·연금저축·IRP)
+    tax_deferred_krw: float = 0.0
+    # 일반계좌에서 떼일 것으로 보이는 세금 (과세표준 x 15.4%)
+    withholding_krw: float = 0.0
     rows: list[PayslipRow] = field(default_factory=list)
     unknown_tax_basis_rows: int = 0     # 과세표준을 모르는 줄 수
     estimated_rows: int = 0             # 예상값이 섞인 줄 수
@@ -127,6 +170,19 @@ class PeriodTotal:
         """세금 계산에 안 잡히는 금액. 과세표준을 아는 줄만 가지고 계산합니다."""
         known = sum(r.amount_krw or 0.0 for r in self.rows if r.has_tax_basis)
         return max(0.0, known - self.tax_basis_krw)
+
+    @property
+    def after_tax_krw(self) -> float:
+        """세금 떼고 실제로 들어올 것으로 보이는 합계."""
+        return max(0.0, (self.amount_krw or 0.0) - self.withholding_krw)
+
+    @property
+    def has_tax_deferred(self) -> bool:
+        return self.tax_deferred_krw > 0
+
+    @property
+    def has_withholding(self) -> bool:
+        return self.withholding_krw > 0
 
     @property
     def tax_basis_is_partial(self) -> bool:
@@ -193,6 +249,11 @@ def total_of(rows: list[PayslipRow], label: str = "") -> PeriodTotal:
         if r.amount_krw is None:
             t.skipped_rows += 1
             continue
+        # 세금은 계좌 유형별로 갈라서 셉니다.
+        if r.is_tax_deferred:
+            t.tax_deferred_krw += r.amount_krw
+        else:
+            t.withholding_krw += (r.withholding_krw or 0.0)
         t.amount_krw += r.amount_krw
         if r.tax_basis_krw is None:
             t.unknown_tax_basis_rows += 1

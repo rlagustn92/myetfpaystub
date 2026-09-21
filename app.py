@@ -157,27 +157,42 @@ def render_empty() -> None:
 # =====================================================================
 # 5. 홈
 # =====================================================================
+def _row_tax_text(r) -> str:
+    """지급 한 줄 아래에 붙는 세금 한 마디.
+
+    계좌 유형에 따라 **할 말이 다릅니다.**
+        ISA·연금저축 : 세금을 안 떼니 "세금 안 뗌"
+        일반계좌     : 떼일 세금과 실수령
+    긴 문장은 넣지 않습니다 — 목록은 한눈에 훑는 자리입니다.
+    """
+    if r.is_tax_deferred:
+        return config.TAX_DEFERRED_LABEL
+    star = "*" if not r.has_tax_basis else ""
+    return (f"{config.TAX_BASIS_LABEL} {F.won(r.taxable_basis_krw)}{star} · "
+            f"세후 {F.won(r.after_tax_krw)}")
+
+
 def render_home() -> None:
     """홈.
 
     화면 구성 원칙 — **한 제목은 하나의 테두리를 갖습니다.**
-    예전에는 제목이 그냥 글자였고 카드는 흰 바탕 위의 흰 카드라, 뭐가 뭐에
-    속하는지 안 보이고 화면이 떠다녔습니다. 지금은 묶음마다 `ui.panel()` 로
-    감쌉니다. 패널만 선을 긋고 안의 카드는 은은한 채움으로만 구분합니다.
+    묶음마다 `ui.panel()` 로 감싸고, 패널만 선을 긋습니다. 안의 카드는
+    은은한 채움으로만 구분합니다.
 
-    문구도 함께 덜어냈습니다. 설명이 필요한 자리에는 남기되, 카드 밑에
-    한 번 더 풀어 쓰던 줄들은 없앴습니다 — 읽을 게 많으면 아무것도 안 읽힙니다.
+    줄이 많아지는 목록(지급 내역·MY ETF)은 **접어 둡니다.** 종목이 열 개만
+    넘어가도 화면이 숫자로 가득 차서 정작 위의 핵심 숫자가 안 보입니다.
     """
     # -- ① 지금 얼마인가 -------------------------------------------------
     profit = summary.total_profit_krw
     panel(
-        "지금 내 ETF",
+        "자산",
         grid_html([
-            kcard_html(F.won(summary.total_value_krw), "지금 내 돈",
+            kcard_html(F.won(summary.total_value_krw), "현재 자산 평가액",
                        f"{len(portfolio.tickers())}개 종목 · "
                        f"{len(portfolio.holdings)}개 계좌"),
-            kcard_html(F.won(summary.total_cost_krw), "내가 넣은 돈"),
-            kcard_html(F.won_signed(profit), "벌거나 잃은 돈",
+            kcard_html(F.won(summary.total_cost_krw), "투자 원금",
+                       "수량 × 평균 매입가"),
+            kcard_html(F.won_signed(profit), "평가손익",
                        F.pct_signed(summary.profit_rate)
                        if summary.profit_rate is not None else "",
                        tone="up" if profit > 0 else ("down" if profit < 0 else "")),
@@ -197,79 +212,88 @@ def render_home() -> None:
     ny, nm = (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
     nxt = CF.month_total(portfolio, dists, ny, nm, latest_rate=summary.usdkrw)
 
-    subs = [("세금 계산에 잡히는 금액", F.won(this_month.tax_basis_krw))]
-    if this_month.tax_basis_is_partial:
-        subs.append(("자료가 없는 건", f"{this_month.unknown_tax_basis_rows}건"))
+    # 급여명세서답게 **지급 - 공제 = 실수령** 으로 보여줍니다.
+    # 세금은 계좌 유형에 따라 갈립니다 — ISA·연금저축은 받을 때 안 뗍니다.
+    subs = [(config.TAX_BASIS_LABEL, F.won(this_month.tax_basis_krw))]
+    if this_month.has_withholding:
+        subs.append((f"{config.WITHHOLDING_LABEL} ({config.WITHHOLDING_RATE_LABEL})",
+                     "-" + F.won(this_month.withholding_krw)))
+        subs.append((config.AFTER_TAX_LABEL, F.won(this_month.after_tax_krw)))
+    if this_month.has_tax_deferred:
+        subs.append((config.TAX_DEFERRED_LABEL, F.won(this_month.tax_deferred_krw)))
 
     panel(
-        "ETF 월급",
+        "배당금",
         paycard_html(
             F.won(this_month.amount_krw),
             f"{today.year}년 {today.month}월",
-            "이번 달에 들어오는 돈"
-            + (" · 일부 예상 포함" if this_month.has_estimate else ""),
+            f"이번달 {'예상 ' if this_month.has_estimate else ''}배당금",
             subs,
         )
         + "<div style='height:10px'></div>"
         + grid_html([
             kcard_html(F.won(nxt.amount_krw) if nxt.rows else config.NO_DATA_TEXT,
-                       f"{nm}월에 들어올 돈",
+                       f"{nm}월 예상 배당금",
                        "🟡 예상값입니다" if nxt.has_estimate
                        else ("확정된 지급만 있습니다" if nxt.rows else "아직 알 수 없습니다")),
-            kcard_html(F.won(year.amount_krw), f"{today.year}년 누적",
-                       f"세금 계산 기준 {F.won(year.tax_basis_krw)}"),
+            kcard_html(F.won(year.amount_krw), f"{today.year}년 누적 배당금",
+                       f"{config.TAX_BASIS_LABEL} {F.won(year.tax_basis_krw)}"),
         ], cols=2),
     )
+    # ⚠ 한 줄에 몰아 찍으면 다시 구구절절해집니다. 필요한 것만 한 줄씩.
+    if this_month.has_withholding:
+        note(f"※ {config.WITHHOLDING_LABEL} — {config.WITHHOLDING_HELP}")
+    if this_month.has_tax_deferred:
+        note(f"※ {config.TAX_DEFERRED_HELP}")
+    if this_month.tax_basis_is_partial:
+        note(f"※ 과세표준 미발표 {this_month.unknown_tax_basis_rows}건 — 0원으로 계산")
 
-    if this_month.tax_basis_is_partial or year.tax_basis_is_partial:
-        note("※ '세금 계산에 잡히는 금액' 은 운용사가 발표한 건만 더한 값입니다. "
-             "아직 발표 전인 건은 0원으로 세지 않고 뺐습니다.")
-
-    # -- ③ 이번 달 지급 내역 ---------------------------------------------
+    # -- ③ 이번 달 지급 내역 (접어 둡니다) --------------------------------
     if not this_month.rows:
         panel(f"{today.month}월 지급 내역",
               "<div class='note'>이번 달에는 예정된 분배금이 없습니다.</div>")
     else:
-        rows = "".join(
-            row_html(
-                f"{F.md(r.payment_date)}　{r.name}",
-                f"{r.holding.where()} · {F.shares(r.holding.shares)}"
-                + (f" · {r.record_note}" if r.record_note else ""),
-                F.won(r.amount_krw),
-                f"세금 기준 {F.won(r.tax_basis_krw)}" if r.has_tax_basis
-                else f"세금 기준 {r.tax_basis_note}",
-                chip="예상" if r.is_estimated else "",
+        with st.expander(f"📅 　{today.month}월 지급 내역　{len(this_month.rows)}건　"
+                         f"— 눌러서 펼치기 👆"):
+            rows = "".join(
+                row_html(
+                    f"{F.md(r.payment_date)}　{r.name}",
+                    f"{r.holding.where()} · {F.shares(r.holding.shares)}"
+                    + (f" · {r.record_note}" if r.record_note else ""),
+                    F.won(r.amount_krw),
+                    _row_tax_text(r),
+                    chip="예상" if r.is_estimated else "",
+                )
+                for r in this_month.rows
             )
-            for r in this_month.rows
-        )
-        panel(f"{today.month}월 지급 내역", rows)
-        if any(r.record_note for r in this_month.rows):
-            note("※ '기준' 은 그날 갖고 있어야 받는다는 뜻입니다. "
-                 "월말 기준 ETF 는 돈이 다음 달 초에 들어옵니다.")
+            st.markdown(rows, unsafe_allow_html=True)
+            if any(r.record_note for r in this_month.rows):
+                note("※ '기준' 은 그날 갖고 있어야 받는다는 뜻입니다. "
+                     "월말 기준 ETF 는 돈이 다음 달 초에 들어옵니다.")
 
-    # -- ④ 내 ETF --------------------------------------------------------
-    rows = ""
-    for g in PS.group_by_ticker(summary):
-        v = g.value_krw(summary.usdkrw)
-        c = g.cost_krw(summary.usdkrw)
-        gain = (v - c) if (v is not None and c is not None) else None
-        places = len({r.holding.where() for r in g.rows})
-        rows += row_html(
-            g.name,
-            f"{F.shares(g.total_shares)} · 평균 {F.native_amt(g.avg_price, g.currency)}"
-            + (f" · {places}개 계좌" if places > 1 else ""),
-            F.won(v) if v is not None else config.NO_DATA_TEXT,
-            F.won_signed(gain) if gain is not None else "",
-            # 차트·뉴스처럼 이 앱이 안 만드는 건 증권사 화면으로 넘깁니다.
-            # 만들 수 있는 주소만 옵니다(빈 페이지로 보내지 않으려고).
-            links=link_service.links_for(g.market, g.ticker),
-        )
-    panel("내 ETF", rows)
+    # -- ④ MY ETF (접어 둡니다) -------------------------------------------
+    groups = PS.group_by_ticker(summary)
+    with st.expander(f"📦 　MY ETF　{len(groups)}종목　— 눌러서 펼치기 👆"):
+        rows = ""
+        for g in groups:
+            v = g.value_krw(summary.usdkrw)
+            c = g.cost_krw(summary.usdkrw)
+            gain = (v - c) if (v is not None and c is not None) else None
+            places = len({r.holding.where() for r in g.rows})
+            rows += row_html(
+                g.name,
+                f"{F.shares(g.total_shares)} · 평균 {F.native_amt(g.avg_price, g.currency)}"
+                + (f" · {places}개 계좌" if places > 1 else ""),
+                F.won(v) if v is not None else config.NO_DATA_TEXT,
+                F.won_signed(gain) if gain is not None else "",
+                # 차트·뉴스처럼 이 앱이 안 만드는 건 증권사 화면으로 넘깁니다.
+                # 만들 수 있는 주소만 옵니다(빈 페이지로 보내지 않으려고).
+                links=link_service.links_for(g.market, g.ticker),
+            )
+        st.markdown(rows, unsafe_allow_html=True)
 
     # -- ⑤ 증권사별 ------------------------------------------------------
-    # ⚠ 여기는 expander(위젯)라 패널로 못 감쌉니다. Streamlit 은 위젯을
-    #    내가 만든 <div> 안에 넣어주지 않습니다.
-    section("어디에 있나요?", "증권사를 누르면 계좌별로 쪼개서 볼 수 있습니다.")
+    section("증권사별 보유", "증권사를 누르면 계좌별로 쪼개서 볼 수 있습니다.")
     for g in PS.group_by_broker(summary):
         share = (f" · 전체의 {g.value_krw / summary.total_value_krw * 100:.0f}%"
                  if summary.total_value_krw > 0 else "")
@@ -323,7 +347,7 @@ def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None
     자리는 끌어서 바꿀 수 있고, 바꾼 자리는 저장 파일에 같이 남습니다.
     이건 평가나 추천이 아니라 **내가 가진 걸 한눈에 보는 그림**일 뿐입니다.
     """
-    section("⚽ 내 포트폴리오 전술판",
+    section("⚽ 내 ETF 라인업",
             "유니폼 숫자 = 내 ETF 자산에서 그 종목이 차지하는 비율 · "
             "흰 유니폼 = 미국 종목 · C = 지금 가장 많이 들고 있는 종목. "
             "카드를 끌어다 자리를 바꿀 수 있습니다.")
@@ -343,10 +367,10 @@ def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None
 
     capture_summary = {
         "cells": [
-            {"k": "내 ETF 자산", "v": F.won_short(summary.total_value_krw)},
-            {"k": f"{month_label} ETF 월급", "v": F.won_short(this_month.amount_krw)},
+            {"k": "평가액", "v": F.won_short(summary.total_value_krw)},
+            {"k": f"{month_label} 배당금", "v": F.won_short(this_month.amount_krw)},
             {"k": f"{today.year}년 누적", "v": F.won_short(year_total.amount_krw)},
-            {"k": "세금 계산 기준", "v": F.won_short(year_total.tax_basis_krw)},
+            {"k": config.TAX_BASIS_LABEL, "v": F.won_short(year_total.tax_basis_krw)},
         ],
         "note": f"※ 참고용 · 실제 입금액·세금은 증권사 내역과 다를 수 있음 · "
                 f"{today:%Y-%m-%d} 기준",
@@ -392,6 +416,20 @@ def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None
 
     if result and pitch_service.apply_assignments(portfolio, result.get("assignments") or {}):
         st.rerun()
+
+    # 📸 캡처·📋 텍스트에 딸려 나가는 요약을 **화면에서도** 보여줍니다.
+    # 예전에는 이미지를 저장해 봐야만 볼 수 있어서, 뭐가 같이 나가는지
+    # 모르고 공유하게 됐습니다. 같은 `capture_summary` 를 그대로 씁니다 —
+    # 따로 만들면 화면과 이미지의 숫자가 어긋납니다.
+    st.markdown(
+        grid_html(
+            [kcard_html(c["v"], c["k"]) for c in capture_summary["cells"]],
+            cols=4,
+        ),
+        unsafe_allow_html=True,
+    )
+    note(capture_summary["key_note"])
+    note(capture_summary["note"])
 
     if payload.unpriced:
         note(f"※ {', '.join(payload.unpriced)} 은(는) 지금 가격을 확인하지 못해 "
@@ -489,17 +527,34 @@ def render_payslip() -> None:
     total = CF.month_total(portfolio, dists, year, month, latest_rate=summary.usdkrw)
 
     with c2:
-        a, b, c = st.columns(3)
-        with a:
-            kcard(F.won(total.amount_krw), f"{month}월 ETF 월급",
-                  "예상값 포함" if total.has_estimate else "확인된 금액")
-        with b:
-            kcard(F.won(total.tax_basis_krw), "세금 계산에 잡히는 금액",
-                  f"자료 없는 건 {total.unknown_tax_basis_rows}건"
-                  if total.tax_basis_is_partial else "전부 확인됨")
-        with c:
-            kcard(F.won(total.non_taxed_krw), "세금에 안 잡힌 금액",
-                  "과세표준 자료가 있는 건만 계산")
+        # 고른 연·월을 크게 보여줍니다. 위의 입력칸은 작아서 지금 몇 월을
+        # 보고 있는지 놓치기 쉽습니다.
+        st.markdown(
+            f"<div class='bigdate'><span class='y'>{year}</span>"
+            f"<span class='m'>{month}</span><span class='u'>월</span></div>",
+            unsafe_allow_html=True,
+        )
+        # 급여명세서: **받은 돈 - 뗀 세금 = 실수령**.
+        cards = [
+            kcard_html(F.won(total.amount_krw), f"{month}월 배당금",
+                       "예상값 포함" if total.has_estimate else "확인된 금액"),
+            kcard_html(F.won(total.tax_basis_krw), config.TAX_BASIS_LABEL,
+                       f"미발표 {total.unknown_tax_basis_rows}건은 0원"
+                       if total.tax_basis_is_partial else "세금은 이 금액에 매겨집니다"),
+        ]
+        if total.has_withholding:
+            cards.append(kcard_html(
+                "-" + F.won(total.withholding_krw),
+                f"{config.WITHHOLDING_LABEL} ({config.WITHHOLDING_RATE_LABEL})",
+                "일반계좌만", tone="down"))
+            cards.append(kcard_html(F.won(total.after_tax_krw),
+                                    config.AFTER_TAX_LABEL, "세금 떼고 들어올 돈"))
+        if total.has_tax_deferred:
+            cards.append(kcard_html(F.won(total.tax_deferred_krw),
+                                    config.TAX_DEFERRED_LABEL,
+                                    "ISA·연금저축은 그대로 입금"))
+        st.markdown(grid_html(cards, cols=min(4, max(2, len(cards)))),
+                    unsafe_allow_html=True)
 
     st.write("")
     section(f"{year}년 {month}월 급여명세서")
@@ -511,36 +566,75 @@ def render_payslip() -> None:
                 {
                     "날짜": F.md(r.payment_date),
                     "ETF": r.name,
-                    "증권사": r.holding.broker or "-",
-                    "계좌": r.holding.account or "-",
+                    "어디에": f"{r.holding.broker or '-'} · {r.holding.account or '-'}",
                     "수량": F.shares(r.holding.shares),
-                    "받는 금액": F.won(r.amount_krw),
-                    "세금 계산 기준": (F.won(r.tax_basis_krw) if r.has_tax_basis
-                                  else r.tax_basis_note),
-                    # 월말이 기준인 ETF 는 돈이 다음 달 초에 들어옵니다.
-                    # 기준일을 같이 보여주지 않으면 "왜 이 달에 있지?" 가 됩니다.
+                    "배당금": F.won(r.amount_krw),
+                    # ⚠ 과세표준액입니다. 세율을 곱한 값이 아닙니다.
+                    #    미발표는 셀에 0원만 적고, 몇 건인지는 표 **아래 한 줄**로
+                    #    알립니다 — 셀에 긴 글이 섞이면 표가 지저분해집니다.
+                    config.TAX_BASIS_LABEL: F.won(r.taxable_basis_krw)
+                                            + ("*" if not r.has_tax_basis else ""),
+                    config.WITHHOLDING_LABEL: ("-" + F.won(r.withholding_krw)
+                                               if r.withholding_krw is not None
+                                               else config.TAX_DEFERRED_LABEL),
+                    "실수령": F.won(r.after_tax_krw),
                     "지급기준일": (F.ymd(r.dist.record_date) if r.dist.record_date
-                              else config.NO_DATA_TEXT),
-                    "": "🟡 예상" if r.is_estimated else "🟢 확인",
+                              else "-"),
+                    "": "🟡" if r.is_estimated else "🟢",
                 }
                 for r in total.rows
             ],
             width="stretch", hide_index=True,
         )
+        lines = [f"🟡 예상 · 🟢 확인 · {config.WITHHOLDING_LABEL}은 "
+                 f"{config.WITHHOLDING_RATE_LABEL} 기준 예상값입니다"]
+        if total.tax_basis_is_partial:
+            lines.append(f"* 운용사 미발표 {total.unknown_tax_basis_rows}건 — "
+                         f"0원으로 계산했습니다")
+        if total.has_tax_deferred:
+            lines.append(config.TAX_DEFERRED_HELP)
+        for line in lines:
+            note("※ " + line)
 
     st.write("")
     render_calendar(year, month, total)
 
     st.write("")
-    section(f"{year}년 월별 추이", "막대가 높을수록 그 달에 많이 들어온 달입니다.")
+    section(f"{year}년 월별 배당금", "막대 위 숫자가 그 달에 들어온 금액입니다.")
     series = CF.monthly_series(portfolio, dists, year, latest_rate=summary.usdkrw)
-    # ⚠ 라벨을 "1월".."12월" 로 두면 문자열 순으로 정렬돼 10·11·12월이 앞으로 갑니다.
-    #    두 자리로 맞춰야("01월") 1월부터 제대로 늘어섭니다.
-    st.bar_chart(
-        pd.DataFrame({"ETF 월급(원)": [t.amount_krw for _, t in series]},
-                     index=[f"{m:02d}월" for m, _ in series]),
-        height=220,
-    )
+    st.markdown(bars_html(series, highlight=month), unsafe_allow_html=True)
+
+
+def bars_html(series, highlight: int | None = None) -> str:
+    """월별 막대 그래프를 직접 그립니다.
+
+    ⚠ `st.bar_chart` 를 쓰다가 바꿨습니다. 그건 월 라벨이 **누워서** 나오고,
+      막대에 값이 안 적히고, 가로로 스크롤돼서 "뭐가 얼마인지" 를 읽을 수가
+      없었습니다. 열두 달은 한눈에 들어와야 하는 양이라 직접 그립니다.
+    """
+    vals = [(m, (t.amount_krw or 0.0)) for m, t in series]
+    top = max((v for _, v in vals), default=0.0)
+    cols = []
+    for m, v in vals:
+        # 0 인 달도 자리를 지켜야 열두 달의 리듬이 보입니다.
+        height = 4 if top <= 0 or v <= 0 else max(6, round(v / top * 120))
+        cls = "col"
+        if v <= 0:
+            cls += " zero"
+        if highlight is not None and m == highlight:
+            cls += " now"
+        label = F.won_short(v) if v > 0 else ""
+        cols.append(
+            f"<div class='{cls}'><div class='val'>{_esc_txt(label)}</div>"
+            f"<div class='bar' style='height:{height}px'></div>"
+            f"<div class='lab'>{m}</div></div>"
+        )
+    return f"<div class='bars'>{''.join(cols)}</div>"
+
+
+def _esc_txt(x) -> str:
+    import html as _h
+    return _h.escape(str(x))
 
 
 def render_calendar(year: int, month: int, total: CF.PeriodTotal) -> None:
@@ -569,8 +663,15 @@ def render_calendar(year: int, month: int, total: CF.PeriodTotal) -> None:
     st.markdown("".join(cells), unsafe_allow_html=True)
 
     if by_day:
+        # ⚠ 이 칸을 못 알아보고 달력 숫자를 누르고 있었다는 이야기를 들었습니다.
+        #    누를 수 있는 것은 눌러 보이게 생겨야 합니다.
+        st.markdown(
+            "<div class='pickbox'><div class='pt'>👇 날짜를 고르면 그날 들어오는 "
+            "종목이 나옵니다</div></div>",
+            unsafe_allow_html=True,
+        )
         picked = st.selectbox(
-            "날짜를 고르면 그날 들어오는 종목을 볼 수 있습니다",
+            "날짜 고르기",
             sorted(by_day.keys()),
             format_func=lambda d: f"{d.month}월 {d.day}일 — {F.won(by_day[d].amount_krw)}",
             key=f"cal_{year}_{month}",
@@ -580,8 +681,7 @@ def render_calendar(year: int, month: int, total: CF.PeriodTotal) -> None:
                     f"{r.holding.where()} · {F.shares(r.holding.shares)}"
                     + (f" · {r.record_note}" if r.record_note else ""),
                     F.won(r.amount_krw),
-                    f"세금 기준 {F.won(r.tax_basis_krw)}" if r.has_tax_basis
-                    else f"세금 기준 {r.tax_basis_note}",
+                    _row_tax_text(r),
                     chip="예상" if r.is_estimated else "")
 
 
@@ -614,20 +714,24 @@ def render_detail() -> None:
 
     v = g.value_krw(summary.usdkrw)
     c = g.cost_krw(summary.usdkrw)
-    a, b, cc, dd = st.columns(4)
-    with a:
-        kcard(F.shares(g.total_shares), "내가 가진 수량",
-              f"{len(g.rows)}개 계좌")
-    with b:
-        kcard(F.native_amt(g.avg_price, g.currency), "평균 매입가격")
-    with cc:
-        kcard(F.native_amt(g.price, g.currency), "지금 가격",
-              "Yahoo Finance" if g.market == MARKET_US else "FinanceDataReader")
-    with dd:
-        profit = (v - c) if (v is not None and c is not None) else None
-        kcard(F.won(v), "지금 내 돈",
-              F.won_signed(profit) if profit is not None else "",
-              tone="up" if (profit or 0) > 0 else ("down" if (profit or 0) < 0 else ""))
+    profit = (v - c) if (v is not None and c is not None) else None
+    rate = (profit / c * 100.0) if (profit is not None and c) else None
+    st.markdown(
+        grid_html([
+            kcard_html(F.shares(g.total_shares), "보유 수량", f"{len(g.rows)}개 계좌"),
+            kcard_html(F.native_amt(g.avg_price, g.currency), "평균 매입가",
+                       f"지금 {F.native_amt(g.price, g.currency)}"),
+            kcard_html(F.won(c), "투자 원금", "수량 × 평균 매입가"),
+            kcard_html(F.won(v), "평가액"),
+            # 손익은 따로 한 칸을 줘서 눈에 확 들어오게 합니다.
+            kcard_html(F.won_signed(profit) if profit is not None else config.NO_DATA_TEXT,
+                       "평가손익",
+                       F.pct_signed(rate) if rate is not None else "",
+                       tone="up" if (profit or 0) > 0 else
+                            ("down" if (profit or 0) < 0 else "")),
+        ], cols=5),
+        unsafe_allow_html=True,
+    )
 
     st.write("")
     section("계좌별 보유 현황")
@@ -637,8 +741,8 @@ def render_detail() -> None:
                 "증권사": r.holding.broker or "-",
                 "계좌": r.holding.account or "-",
                 "수량": F.shares(r.holding.shares),
-                "평균 매입가격": F.native_amt(r.holding.avg_price, g.currency),
-                "지금 내 돈": F.won(r.value_krw(summary.usdkrw)),
+                "평균 매입가": F.native_amt(r.holding.avg_price, g.currency),
+                "평가액": F.won(r.value_krw(summary.usdkrw)),
             }
             for r in g.rows
         ],
@@ -646,7 +750,7 @@ def render_detail() -> None:
     )
 
     st.write("")
-    section("💰 이 ETF 의 월급")
+    section("💰 이 ETF 의 배당금")
     if td is None or not td.ok:
         warn(f"분배금 자료를 가져오지 못했습니다. {td.error if td else ''}")
         return
@@ -663,22 +767,27 @@ def render_detail() -> None:
               F.ymd(last.payment_date) if last else "")
     with b:
         mine = (last.distribution_per_share * g.total_shares) if last else None
+        # "그때 내 수량이면 받는 금액" 이라고 적었더니 무슨 말인지 모르겠다는
+        # 이야기를 들었습니다. 지금 갖고 있는 수량으로 환산한 금액입니다.
         kcard(F.won(fx_service.to_krw(mine, g.currency, summary.usdkrw)),
-              "그때 내 수량이면 받는 금액", DS.cycle_label(interval))
+              f"내 {F.shares(g.total_shares)} 기준 금액", DS.cycle_label(interval))
     with cc:
         if nxt:
             mine_next = nxt.distribution_per_share * g.total_shares
             kcard(F.won(fx_service.to_krw(mine_next, g.currency, summary.usdkrw)),
-                  f"다음 예상 ({F.ymd(nxt.payment_date)})", "🟡 예상값입니다")
+                  "다음 예상 배당금",
+                  f"🟡 {F.ymd(nxt.payment_date)} 예상")
         else:
-            kcard(config.NO_DATA_TEXT, "다음 지급 예상", "근거가 부족해 예상하지 않았습니다")
+            kcard(config.NO_DATA_TEXT, "다음 예상 배당금",
+                  "근거가 부족해 예상하지 않았습니다")
 
     if nxt:
         note(f"※ {nxt.note}")
 
     st.write("")
-    section("세금 계산에 잡히는 금액",
-            "운용사가 발표하는 '주당 과세표준액' 입니다. 분배금과 전혀 다른 금액일 수 있습니다.")
+    section(config.TAX_BASIS_LABEL,
+            f"{config.TAX_BASIS_HELP}. 운용사가 발표하는 값이고, "
+            f"배당금과 전혀 다른 금액일 수 있습니다.")
     if not td.tax_basis_supported:
         warn("이 종목은 과세표준 자료를 제공하는 소스를 찾지 못했습니다. "
              f"금액을 추측해서 채우지 않고 '{config.TAX_BASIS_UNSUPPORTED}' 로 둡니다. "
@@ -688,12 +797,12 @@ def render_detail() -> None:
         a, b = st.columns(2)
         with a:
             kcard(F.native_amt(latest_tb.tax_basis_per_share if latest_tb else None, g.currency),
-                  "가장 최근 주당 과세표준액",
+                  f"가장 최근 {config.TAX_BASIS_PER_SHARE_LABEL}",
                   F.ymd(latest_tb.payment_date) if latest_tb else "아직 발표된 값이 없습니다")
         with b:
             mine_tb = (latest_tb.tax_basis_per_share * g.total_shares) if latest_tb else None
             kcard(F.won(fx_service.to_krw(mine_tb, g.currency, summary.usdkrw)),
-                  "내 수량 기준 세금 계산 금액")
+                  f"내 {F.shares(g.total_shares)} 기준 {config.TAX_BASIS_LABEL}")
 
     st.write("")
     section("최근 지급 내역")
@@ -704,13 +813,14 @@ def render_detail() -> None:
                 "지급기준일": (F.ymd(d.record_date) if d.record_date
                           else config.NO_DATA_TEXT),
                 "지급일": F.ymd(d.payment_date),
-                "주당 분배금": F.native_amt(d.distribution_per_share, g.currency),
-                "주당 과세표준액": (F.native_amt(d.tax_basis_per_share, g.currency)
+                "주당 배당금": F.native_amt(d.distribution_per_share, g.currency),
+                config.TAX_BASIS_PER_SHARE_LABEL: (
+                              F.native_amt(d.tax_basis_per_share, g.currency)
                               if d.has_tax_basis
                               else (config.TAX_BASIS_UNPUBLISHED
                                     if td.tax_basis_supported
                                     else config.TAX_BASIS_UNSUPPORTED)),
-                "내 수량 기준": F.won(fx_service.to_krw(
+                f"내 {F.shares(g.total_shares)} 기준": F.won(fx_service.to_krw(
                     d.distribution_per_share * g.total_shares, g.currency, summary.usdkrw)),
             }
             for d in items[:24]

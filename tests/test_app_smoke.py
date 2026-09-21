@@ -75,8 +75,9 @@ def test_example_button_fills_the_screen(offline):
     buttons[0].click().run()
     assert not at.exception
     text = " ".join(m.value for m in at.markdown)
-    assert "지금 내 ETF" in text
-    assert "ETF 월급" in text
+    assert "class='panel'" in text
+    # 금액 카드가 실제로 채워졌는지 — 문구가 아니라 **구조**를 봅니다.
+    assert "class='paycard'" in text
 
 
 def test_disclaimer_is_always_on_screen(offline):
@@ -126,7 +127,7 @@ def test_adding_a_holding_puts_it_on_the_home_screen(offline, fake_search):
     assert not at.exception
 
     text = " ".join(m.value for m in at.markdown)
-    assert "지금 내 ETF" in text          # 빈 화면에서 홈 화면으로 넘어감
+    assert "class='panel'" in text          # 빈 화면에서 홈 화면으로 넘어감
     assert "Schwab US Dividend Equity ETF" in text
 
 
@@ -152,7 +153,7 @@ def test_pitch_is_on_the_home_screen(offline, fake_search):
     [b for b in at.button if "예시" in b.label][0].click().run()
     assert not at.exception
     text = " ".join(m.value for m in at.markdown)
-    assert "전술판" in text
+    assert "⚽" in text        # 이름은 바뀌어도 ⚽ 는 남깁니다
     assert "유니폼 숫자" in text        # 등번호가 무슨 뜻인지 화면이 말해줘야 합니다
 
 

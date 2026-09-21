@@ -222,11 +222,17 @@ def test_tax_basis_note_says_why_it_is_missing():
     assert unsupported.tax_basis_note == config.TAX_BASIS_UNSUPPORTED
 
 
-def test_the_two_reasons_are_different_words():
-    """같은 말로 적으면 구분한 의미가 없습니다."""
-    assert config.TAX_BASIS_UNPUBLISHED != config.TAX_BASIS_UNSUPPORTED
-    assert config.TAX_BASIS_UNPUBLISHED.strip()
-    assert config.TAX_BASIS_UNSUPPORTED.strip()
+def test_unpublished_reads_as_one_short_word():
+    """사용자 결정으로 **둘 다 "미발표"** 로 통일했습니다.
+
+    예전에는 "운용사 미발표" 와 "확인 불가" 로 나눴는데, 사용자에게는 결국
+    같은 상황이고(금액을 모른다) 표 안에 긴 글이 섞여 지저분했습니다.
+    화면에는 0원으로 적고, 몇 건인지는 **표 아래 한 줄**로 알립니다.
+    """
+    assert config.TAX_BASIS_UNPUBLISHED == "미발표"
+    assert config.TAX_BASIS_UNSUPPORTED == "미발표"
+    # 표 셀에 들어가는 말이라 짧아야 합니다
+    assert len(config.TAX_BASIS_UNPUBLISHED) <= 6
 
 
 # --------------------------------------- 월말 기준 ETF (다음 달 초에 들어옴)
@@ -270,3 +276,84 @@ def test_the_month_bucket_still_follows_the_payment_date():
     8/31 기준분은 돈이 9/2 에 들어오므로 **9월** 명세서에 있어야 합니다."""
     r = _row(date(2026, 8, 31), date(2026, 9, 2))
     assert r.payment_date.month == 9
+
+
+# ============================================================ 계좌별 세금
+# ISA·연금저축·IRP 는 분배금이 계좌 안에서 과세이연됩니다. 지급할 때 세금을
+# 안 떼고 **그대로 입금**되고, 최종 세금은 나중에 찾을 때 개인 상황에 따라
+# 정해져서 이 앱이 계산할 수 없습니다. 일반계좌만 15.4% 를 뗍니다.
+# 포트폴리오 전체에 같은 세율을 먹이면 ISA 를 가진 사람에게 있지도 않은
+# 세금을 보여주게 됩니다 — 그래서 **줄마다** 계좌를 봅니다.
+def _taxrow(account, amount=100000.0, basis=100000.0):
+    h = Holding(ticker="069500", market="KR", name="KODEX 200",
+                broker="증권사", account=account, account_type=account,
+                shares=100, avg_price=30000)
+    return CF.PayslipRow(
+        payment_date=date(2026, 9, 17), holding=h,
+        dist=Distribution(ticker="069500", payment_date=date(2026, 9, 17),
+                          distribution_per_share=1000.0,
+                          tax_basis_per_share=(basis / 100 if basis is not None else None)),
+        amount_krw=amount, tax_basis_krw=basis)
+
+
+@pytest.mark.parametrize("account", ["ISA", "isa", "연금저축", "IRP", "퇴직연금",
+                                     "개인형IRP", "연금"])
+def test_tax_deferred_accounts_take_nothing_at_payout(account):
+    r = _taxrow(account)
+    assert r.is_tax_deferred is True
+    assert r.withholding_krw is None            # 뗄 세금이 없습니다
+    assert r.after_tax_krw == r.amount_krw      # 그대로 들어옵니다
+
+
+@pytest.mark.parametrize("account", ["일반", "위탁", "종합매매", ""])
+def test_ordinary_accounts_are_withheld_at_15_4_percent(account):
+    r = _taxrow(account, amount=100000.0, basis=100000.0)
+    assert r.is_tax_deferred is False
+    assert r.withholding_krw == pytest.approx(15400.0)
+    assert r.after_tax_krw == pytest.approx(84600.0)
+
+
+def test_withholding_is_on_the_tax_basis_not_on_the_payout():
+    """⭐ 분배금이 아니라 **과세표준액**에 세율을 매깁니다.
+
+    같은 종목이 분배금 150,000원 / 과세표준 1,000원인 달이 실제로 있습니다
+    (KODEX 200타겟위클리커버드콜). 분배금에 곱하면 세금이 150배 부풀어요.
+    """
+    r = _taxrow("일반", amount=150000.0, basis=1000.0)
+    assert r.withholding_krw == pytest.approx(154.0)      # 1,000 x 15.4%
+    assert r.after_tax_krw == pytest.approx(149846.0)
+
+
+def test_unpublished_tax_basis_counts_as_zero():
+    """사용자 결정: 미발표는 0원으로 셉니다. 표에는 0원만 적고 몇 건인지는
+    표 아래 한 줄로 알립니다."""
+    r = _taxrow("일반", amount=100000.0, basis=None)
+    assert r.has_tax_basis is False
+    assert r.taxable_basis_krw == 0.0
+    assert r.withholding_krw == 0.0
+    assert r.after_tax_krw == 100000.0
+    assert r.tax_basis_note == config.TAX_BASIS_UNPUBLISHED
+
+
+def test_totals_split_the_two_kinds_of_account():
+    """한 사람이 ISA 와 일반계좌를 같이 갖고 있는 게 보통입니다."""
+    rows = [_taxrow("ISA", amount=50000.0, basis=50000.0),
+            _taxrow("일반", amount=100000.0, basis=100000.0)]
+    t = CF.total_of(rows)
+    assert t.amount_krw == pytest.approx(150000.0)
+    assert t.tax_deferred_krw == pytest.approx(50000.0)    # ISA 는 그대로
+    assert t.withholding_krw == pytest.approx(15400.0)     # 일반계좌만
+    assert t.after_tax_krw == pytest.approx(134600.0)
+    assert t.has_tax_deferred and t.has_withholding
+
+
+def test_a_portfolio_with_only_isa_shows_no_tax_at_all():
+    t = CF.total_of([_taxrow("연금저축", amount=50000.0, basis=50000.0)])
+    assert t.withholding_krw == 0.0
+    assert t.has_withholding is False
+    assert t.after_tax_krw == pytest.approx(50000.0)
+
+
+def test_the_rate_is_the_one_korea_actually_uses():
+    """배당소득세 14% + 지방소득세 1.4% = 15.4%."""
+    assert config.WITHHOLDING_RATE == pytest.approx(0.154)

@@ -21,6 +21,22 @@ import config
 # 색은 한 곳에서만 정합니다. 여기 안 거치고 코드에 색을 직접 쓰지 마세요.
 CSS = """
 <style>
+  /* 본고딕(Noto Sans KR). 한글·숫자·영문이 한 가족이라 화면이 고르게 보입니다.
+     ⚠ 폰트가 늦게 오면 글자가 잠깐 다른 모양으로 보입니다(FOUT). `display=swap`
+       이라 글자가 사라지진 않습니다 — 비어 보이는 것보다 낫습니다. */
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+
+  html, body, .stApp, [class*="st-"], button, input, select, textarea,
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Noto Sans KR', system-ui, sans-serif !important;
+  }
+  /* ⚠ 위 규칙이 **아이콘 폰트까지 덮어씁니다.** 그러면 펼침 화살표가
+     `keyboard_arrow_right` 라는 **글자 그대로** 나와서 제목을 덮습니다
+     (실제로 그랬습니다). 아이콘만 원래 폰트로 되돌립니다. */
+  [data-testid="stIconMaterial"], .material-icons, .material-symbols-rounded,
+  span[class*="material-"] {
+    font-family: 'Material Symbols Rounded', 'Material Icons' !important;
+  }
   /* ===================================================================
      색 — 한 곳에서만 정합니다. 여기 안 거치고 코드에 색을 직접 쓰지 마세요.
 
@@ -44,6 +60,14 @@ CSS = """
     --brand:      #1454FF;
     --up:         #C7362F;   /* 한국 관습: 오른 것이 빨강 */
     --down:       #1F5FD0;
+    /* 월급 카드 — 먹색이 너무 무거워서 은은한 초록으로. 돈이 들어오는
+       카드라 초록이 뜻과도 맞습니다. 흰 글자 대비 9.3:1 로 넉넉합니다. */
+    --money:      #2C4A3E;
+    --money-line: rgba(255,255,255,.18);
+    /* 바로가기 — 각 서비스 색 (사용자 요청) */
+    --naver:      #0A8040;   /* 대비 5.03 — #0B8A43 은 4.44 라 AA 미달 */
+    --toss:       #2E6FE8;
+    --yahoo:      #5E35B1;
     --warn-bg:    #FBF6E8;
     --warn-line:  #E6D8AE;
     --bg-soft:    #F4F2ED;   /* 옛 이름 — 쓰던 곳이 안 깨지게 둡니다 */
@@ -104,14 +128,14 @@ CSS = """
   /* ---- 이번 달 월급 — 화면에서 가장 무거운 한 덩어리 ----
      파랑 그라디언트를 먹색 단색으로 바꿨습니다. 그라디언트는 시선을 끄는
      대신 화면을 시끄럽게 합니다. 한 덩어리가 조용히 무거운 편이 낫습니다. */
-  .paycard { background:var(--ink); border-radius:16px; padding:22px 24px; color:#fff; }
+  .paycard { background:var(--money); border-radius:16px; padding:22px 24px; color:#fff; }
   .paycard .cap { font-size:.8rem; opacity:.7; font-weight:600; }
   .paycard .v { font-size:2.5rem; font-weight:800; letter-spacing:-.045em;
                 margin:.18rem 0 .1rem; font-variant-numeric: tabular-nums;
                 line-height:1.05; }
   .paycard .l { font-size:.8rem; opacity:.66; }
   .paycard .sub { margin-top:16px; padding-top:13px;
-                  border-top:1px solid rgba(255,255,255,.16);
+                  border-top:1px solid var(--money-line);
                   display:flex; gap:26px; flex-wrap:wrap; }
   .paycard .sub .k { font-size:.72rem; opacity:.6; }
   .paycard .sub .n { font-size:1.02rem; font-weight:700; margin-top:2px;
@@ -129,9 +153,15 @@ CSS = """
   .chip { display:inline-block; font-size:.7rem; font-weight:700; border-radius:999px;
           padding:2px 8px; background:var(--tint-deep); color:var(--ink-soft);
           margin-left:6px; white-space:nowrap; }
-  a.chip.link { color:var(--ink-soft); text-decoration:none; border:1px solid var(--line);
-                background:var(--panel); }
-  a.chip.link:hover { background:var(--tint); color:var(--ink); }
+  /* 바로가기 — 어디로 가는지 색으로 바로 알게 합니다.
+     글자에만 색을 쓰고 배경은 비워 둡니다. 배경까지 칠하면 한 줄에 세 개라
+     목록이 알록달록해집니다. */
+  a.chip.link { text-decoration:none; border:1px solid var(--line);
+                background:var(--panel); color:var(--ink-soft); }
+  a.chip.link:hover { background:var(--tint); }
+  a.chip.naver { color:var(--naver); border-color:#BFE6CE; }
+  a.chip.toss  { color:var(--toss);  border-color:#C8D9F8; }
+  a.chip.yahoo { color:var(--yahoo); border-color:#D6CBEC; }
 
   /* ---- 스킨 미리보기 ---- */
   .skins { display:grid; grid-template-columns:repeat(auto-fill,minmax(148px,1fr)); gap:8px; }
@@ -161,6 +191,64 @@ CSS = """
   .cal .d .m { font-size:.78rem; font-weight:800; color:var(--ink); margin-top:6px;
                font-variant-numeric: tabular-nums; line-height:1.2; }
   .cal .d.pay { background:var(--tint); border-color:var(--line); }
+
+  /* ===================================================================
+     펼쳐 보는 칸 — 누를 수 있다는 걸 눈에 보이게
+     -------------------------------------------------------------------
+     달력 아래 날짜 고르는 칸을 못 알아보고 달력 숫자를 누르고 있었다는
+     이야기를 들었습니다. 누를 수 있는 것은 **눌러 보이게** 생겨야 합니다.
+     =================================================================== */
+  div[data-testid="stExpander"] details {
+    border:1px solid var(--line) !important; border-radius:14px !important;
+    background:var(--panel) !important; overflow:hidden;
+  }
+  div[data-testid="stExpander"] summary { background:var(--tint) !important;
+    font-weight:700 !important; }
+  div[data-testid="stExpander"] summary:hover { background:var(--tint-deep) !important; }
+
+  /* 눌러 달라는 표시 — 살짝 흔들립니다(한 번만) */
+  .tapme { display:inline-block; font-size:.72rem; font-weight:700; color:var(--ink-soft);
+           background:var(--tint-deep); border-radius:999px; padding:2px 9px;
+           margin-left:6px; white-space:nowrap;
+           animation:tap 1.6s ease-in-out 3; }
+  @keyframes tap { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-2px)} }
+
+  /* 고르는 칸을 감싸 눈에 띄게 (달력 아래 날짜 고르기 등) */
+  .pickbox { border:1px solid var(--naver); border-radius:14px;
+             background:#F3FAF5; padding:12px 14px 4px; margin-top:10px; }
+  .pickbox .pt { font-size:.82rem; font-weight:700; color:var(--naver); }
+
+  /* ---- 큰 날짜 (월별 급여명세서) ---- */
+  .bigdate { display:flex; align-items:baseline; gap:10px; }
+  .bigdate .y { font-size:1.15rem; font-weight:700; color:var(--ink-faint);
+                font-variant-numeric:tabular-nums; }
+  .bigdate .m { font-size:2.4rem; font-weight:900; color:var(--ink);
+                letter-spacing:-.04em; line-height:1;
+                font-variant-numeric:tabular-nums; }
+  .bigdate .u { font-size:1rem; font-weight:700; color:var(--ink-soft); }
+
+  /* ===================================================================
+     월별 막대 — st.bar_chart 를 직접 그린 막대로 바꿨습니다
+     -------------------------------------------------------------------
+     기본 차트는 월 라벨이 **누워서** 나오고, 막대에 값이 안 적히고,
+     가로로 스크롤돼서 "뭐가 얼마인지" 를 못 읽었습니다. 열두 달은 한눈에
+     들어와야 하는 양이라 직접 그립니다.
+     =================================================================== */
+  .bars { display:grid; grid-template-columns:repeat(12,1fr); gap:5px;
+          align-items:end; }
+  .bars .col { display:flex; flex-direction:column; align-items:center;
+               justify-content:flex-end; }
+  .bars .val { font-size:.66rem; font-weight:700; color:var(--ink-soft);
+               margin-bottom:4px; font-variant-numeric:tabular-nums;
+               white-space:nowrap; }
+  .bars .bar { width:100%; background:var(--money); border-radius:5px 5px 0 0;
+               min-height:2px; }
+  .bars .col.zero .bar { background:var(--tint-deep); }
+  .bars .col.now .bar { background:var(--ink); }
+  /* ⚠ 라벨은 **똑바로** 세웁니다. 기본 차트가 눕혀서 읽기 나빴습니다. */
+  .bars .lab { font-size:.7rem; color:var(--ink-faint); margin-top:6px;
+               writing-mode:horizontal-tb; font-variant-numeric:tabular-nums; }
+  .bars .col.now .lab { color:var(--ink); font-weight:700; }
 
   @media (max-width: 720px) {
     .grid.c3, .grid.c4 { grid-template-columns:repeat(2,1fr); }
@@ -230,6 +318,21 @@ def paycard(amount: str, caption: str, label: str, subs: list[tuple[str, str]]) 
     )
 
 
+# 바로가기 이름 -> CSS 종류. 어디로 가는지 **색으로** 알게 합니다.
+_CHIP_KINDS: tuple[tuple[str, str], ...] = (
+    ("Npay", "naver"), ("네이버", "naver"),
+    ("토스", "toss"),
+    ("야후", "yahoo"),
+)
+
+
+def _chip_kind(label: str) -> str:
+    for word, kind in _CHIP_KINDS:
+        if word in str(label):
+            return kind
+    return ""
+
+
 def linkchips(links: list[tuple[str, str]]) -> str:
     """(이름, 주소) 목록을 바로가기 칩 HTML 로. 한 곳에서 만들어야 목록과
     상세 화면의 칩이 따로 놀지 않습니다.
@@ -238,7 +341,8 @@ def linkchips(links: list[tuple[str, str]]) -> str:
     조금만 길어져도 칩이 다음 줄로 밀렸습니다. 설명은 툴팁으로 답니다.
     """
     return "".join(
-        f"<a class='chip link' href='{_esc(url)}' target='_blank' rel='noopener'"
+        f"<a class='chip link {_chip_kind(label)}' href='{_esc(url)}'"
+        f" target='_blank' rel='noopener'"
         f" title='{_esc(label)} 에서 보기 — PC·모바일 모두 같은 주소로 열립니다'>"
         f"{_esc(label)} ↗</a>"
         for label, url in links if url
