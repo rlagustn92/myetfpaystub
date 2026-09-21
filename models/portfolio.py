@@ -136,6 +136,10 @@ class Portfolio:
     slots: dict[str, str] = field(default_factory=dict)
     # 고른 경기장 스킨 id (components/skins.py). 빈 값이면 기본 잔디.
     skin: str = ""
+    # 올해 배당금 목표(원). 0 이면 목표를 안 정한 것 — 화면에 안 그립니다.
+    # ⚠ **목표는 사용자가 정하는 값입니다.** 앱이 추천하거나 자동으로 잡지
+    #   않습니다. 얼마를 목표로 할지는 투자 판단이라 우리가 낄 자리가 아닙니다.
+    dividend_goal_krw: float = 0.0
 
     # -- 조회 --------------------------------------------------------
     def by_id(self, holding_id: str) -> Holding | None:
@@ -178,6 +182,7 @@ class Portfolio:
             "account_types": list(self.account_types),
             "slots": dict(self.slots),
             "skin": self.skin,
+            "dividend_goal_krw": self.dividend_goal_krw,
         }
 
     @staticmethod
@@ -206,4 +211,5 @@ class Portfolio:
             account_types=[str(x) for x in (d.get("account_types") or []) if str(x).strip()],
             slots=slots,
             skin=str(d.get("skin") or ""),
+            dividend_goal_krw=max(0.0, safe_float(d.get("dividend_goal_krw"))),
         )

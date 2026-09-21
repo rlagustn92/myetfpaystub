@@ -357,3 +357,53 @@ def test_a_portfolio_with_only_isa_shows_no_tax_at_all():
 def test_the_rate_is_the_one_korea_actually_uses():
     """배당소득세 14% + 지방소득세 1.4% = 15.4%."""
     assert config.WITHHOLDING_RATE == pytest.approx(0.154)
+
+
+# ================================================== 연간 배당금 목표
+def _goal_folio(goal):
+    p = Portfolio(dividend_goal_krw=goal)
+    p.add(Holding(ticker="069500", market="KR", name="KODEX 200",
+                  broker="증권사", account="일반", account_type="일반",
+                  shares=100, avg_price=30000))
+    return p
+
+
+def test_no_goal_means_nothing_is_drawn():
+    """목표는 사용자가 정합니다. 안 정했으면 화면에 안 그립니다."""
+    g = CF.goal_progress(_goal_folio(0), {}, 2026, today=date(2026, 9, 21))
+    assert g.has_goal is False
+    assert g.percent == 0.0
+
+
+def test_received_and_expected_are_counted_separately():
+    """⭐ 섞으면 "벌써 다 받은 것" 처럼 보입니다. 예상은 따로 셉니다."""
+    g = CF.GoalProgress(goal_krw=1_000_000, received_krw=400_000,
+                        expected_krw=200_000)
+    assert g.percent == pytest.approx(40.0)
+    assert g.percent_with_expected == pytest.approx(60.0)
+    assert g.remaining_krw == pytest.approx(600_000)
+
+
+def test_going_over_the_goal_is_shown_as_it_is():
+    """넘겼으면 넘겼다고 보여줘야 합니다. 100 에서 자르지 않습니다."""
+    g = CF.GoalProgress(goal_krw=1_000_000, received_krw=1_300_000, expected_krw=0)
+    assert g.percent == pytest.approx(130.0)
+    assert g.remaining_krw == 0.0        # 남은 돈은 0 이하로 안 내려갑니다
+
+
+def test_the_goal_survives_saving_and_loading():
+    from services import storage_service as STORE
+
+    st = STORE.new_store()
+    st.active().dividend_goal_krw = 2_000_000
+    back, err = STORE.loads(STORE.dumps(st))
+    assert err == ""
+    assert back.active().dividend_goal_krw == 2_000_000
+
+
+def test_a_broken_goal_value_does_not_crash():
+    """바깥에서 온 값을 그대로 믿지 않습니다."""
+    p = Portfolio.from_dict({"dividend_goal_krw": "이상한값"})
+    assert p.dividend_goal_krw == 0.0
+    p2 = Portfolio.from_dict({"dividend_goal_krw": -500})
+    assert p2.dividend_goal_krw == 0.0      # 음수 목표는 없습니다

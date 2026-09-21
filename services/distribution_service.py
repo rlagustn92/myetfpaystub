@@ -213,3 +213,69 @@ def upcoming(td: TickerDistributions, today: date | None = None) -> list[Distrib
         return sorted(future, key=lambda d: d.payment_date)
     est = estimate_next(td, today)
     return [est] if est else []
+
+
+# =====================================================================
+# 배당 성장 — "작년보다 늘었나"
+# =====================================================================
+@dataclass
+class DividendGrowth:
+    """최근 1년 주당 배당금 vs 그 전 1년.
+
+    ⚠ **과거를 보여줄 뿐 미래를 말하지 않습니다.** "성장률" 이라는 말이
+      앞으로도 그만큼 늘 것처럼 읽히기 쉬워서, 화면에는 두 기간의 **실제
+      금액**을 나란히 놓고 차이만 적습니다. 예측이 아닙니다.
+    ⚠ 두 기간 다 지급이 있어야 비교합니다. 상장한 지 얼마 안 된 종목은
+      "비교할 기간이 모자랍니다" 로 둡니다 — 없는 기간을 0 으로 세면
+      성장률이 무한대로 나옵니다.
+    """
+
+    recent_per_share: float          # 최근 12개월 주당 합계
+    previous_per_share: float        # 그 전 12개월 주당 합계
+    recent_count: int
+    previous_count: int
+    currency: str = "KRW"
+
+    @property
+    def comparable(self) -> bool:
+        """비교할 만한가. 그 전 기간에 지급이 있어야 합니다."""
+        return self.previous_count > 0 and self.previous_per_share > 0
+
+    @property
+    def change_pct(self) -> float | None:
+        if not self.comparable:
+            return None
+        return (self.recent_per_share - self.previous_per_share) \
+            / self.previous_per_share * 100.0
+
+    @property
+    def diff_per_share(self) -> float | None:
+        if not self.comparable:
+            return None
+        return self.recent_per_share - self.previous_per_share
+
+
+def dividend_growth(td: TickerDistributions, today: date | None = None) -> DividendGrowth:
+    """최근 1년과 그 전 1년의 주당 배당금 합계.
+
+    ⚠ **확정된 지급만 셉니다.** 예상값을 넣으면 "늘었다" 가 예상 때문인지
+      실제 때문인지 알 수 없게 됩니다.
+    """
+    today = today or config.today_local()
+    one_year = today - timedelta(days=365)
+    two_years = today - timedelta(days=730)
+
+    recent = [d for d in td.items()
+              if one_year < d.payment_date <= today
+              and d.status != config.STATUS_ESTIMATED]
+    previous = [d for d in td.items()
+                if two_years < d.payment_date <= one_year
+                and d.status != config.STATUS_ESTIMATED]
+    currency = (td.items()[0].currency if td.items() else "KRW")
+    return DividendGrowth(
+        recent_per_share=sum(d.distribution_per_share for d in recent),
+        previous_per_share=sum(d.distribution_per_share for d in previous),
+        recent_count=len(recent),
+        previous_count=len(previous),
+        currency=currency,
+    )

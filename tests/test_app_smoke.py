@@ -345,3 +345,35 @@ def test_every_grid_size_the_app_uses_exists_in_the_css():
     used |= {int(n) for n in re.findall(r"grid_html\([^)]*?,\s*(\d+)\)", app_src)}
     for n in used:
         assert f".grid.c{n}" in css, f"grid_html(cols={n}) 을 쓰는데 CSS 에 .grid.c{n} 이 없습니다"
+
+
+def test_pasting_the_same_holding_twice_can_merge_instead_of_duplicating(
+        offline, fake_search):
+    """⭐ 무조건 새로 추가하면 두 번째 붙여넣기에서 줄이 두 배가 됩니다.
+    ⭐ 평단가는 **수량으로 가중평균**해야 합니다. 새 값으로 그냥 덮으면
+      원금이 틀어집니다."""
+    at = AppTest.from_file(APP, default_timeout=120).run()
+
+    def paste(text):
+        box = [t for t in at.text_area if "붙여넣기" in t.label][0]
+        box.set_value(text).run()
+        [b for b in at.button if "한 번에 등록" in b.label][0].click().run()
+
+    paste("종목코드\t수량\t평균단가\n069500\t100\t30,000")
+    p = at.session_state["store"].active()
+    assert len(p.holdings) == 1
+
+    # 같은 종목을 다시 — "수량 더하기" 를 고르면 한 줄로 합쳐져야 합니다
+    at.run()
+    box = [t for t in at.text_area if "붙여넣기" in t.label][0]
+    box.set_value("종목코드\t수량\t평균단가\n069500\t100\t40,000").run()
+    radios = [r for r in at.radio if "이미 있는" in r.label]
+    assert radios, "이미 있는 종목이 섞이면 어떻게 할지 물어봐야 합니다"
+    radios[0].set_value("수량 더하기").run()
+    [b for b in at.button if "한 번에 등록" in b.label][0].click().run()
+    assert not at.exception
+
+    p = at.session_state["store"].active()
+    assert len(p.holdings) == 1                    # 줄이 안 늘어납니다
+    assert p.holdings[0].shares == 200
+    assert p.holdings[0].avg_price == pytest.approx(35000)   # 가중평균

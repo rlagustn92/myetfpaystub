@@ -178,6 +178,15 @@ CSS = """
                  padding:6px 8px 2px; line-height:1.25; }
   .skinbox .kr { font-size:.68rem; color:var(--ink-faint); padding:0 8px 7px; }
 
+  /* ---- 목표 진행 막대 ----
+     받은 돈은 진한 색, 들어올 것으로 보이는 돈은 흐린 색. 섞으면
+     "벌써 다 받은 것" 처럼 보입니다. */
+  .goalbar { display:flex; height:10px; border-radius:999px; overflow:hidden;
+             background:var(--tint-deep); margin-top:10px; }
+  .goalbar i { display:block; height:100%; }
+  .goalbar .got  { background:var(--money); }
+  .goalbar .more { background:var(--money); opacity:.3; }
+
   .note { font-size:.78rem; color:var(--ink-faint); }
   .warn { background:var(--warn-bg); border:1px solid var(--warn-line); border-radius:12px;
           padding:10px 14px; font-size:.84rem; color:#6E5A20; }
@@ -245,8 +254,13 @@ CSS = """
   .bars .val { font-size:.66rem; font-weight:700; color:var(--ink-soft);
                margin-bottom:4px; font-variant-numeric:tabular-nums;
                white-space:nowrap; }
+  /* 막대는 겹쳐 그립니다 — 뒤가 작년, 앞이 올해. */
+  .bars .stack { position:relative; width:100%; display:flex;
+                 align-items:flex-end; justify-content:center; }
   .bars .bar { width:100%; background:var(--money); border-radius:5px 5px 0 0;
-               min-height:2px; }
+               min-height:2px; position:relative; z-index:1; }
+  .bars .ghost { position:absolute; left:0; right:0; bottom:0;
+                 background:var(--money); opacity:.22; border-radius:5px 5px 0 0; }
   .bars .col.zero .bar { background:var(--tint-deep); }
   .bars .col.now .bar { background:var(--ink); }
   /* ⚠ 라벨은 **똑바로** 세웁니다. 기본 차트가 눕혀서 읽기 나빴습니다. */
@@ -473,3 +487,19 @@ def panel(title: str, body: str, hint: str = "") -> None:
     sub = f"<div class='panel-s'>{_esc(hint)}</div>" if hint else ""
     st.markdown(f"<div class='panel'>{head}{sub}<div class='panel-b'>{body}</div></div>",
                 unsafe_allow_html=True)
+
+
+def goalbar_html(percent: float, expected_percent: float = 0.0) -> str:
+    """목표 진행 막대.
+
+    **받은 돈**은 진한 색, **들어올 것으로 보이는 돈**은 흐린 색으로 잇대어
+    그립니다. 섞어 버리면 "벌써 다 받은 것" 처럼 보입니다 — 예상은 예상이라고
+    눈에도 구분되어야 합니다.
+
+    100% 를 넘으면 막대는 가득 차고 숫자로 넘긴 만큼을 보여줍니다.
+    """
+    got = max(0.0, min(100.0, percent))
+    more = max(0.0, min(100.0 - got, expected_percent - percent))
+    return (f"<div class='goalbar'>"
+            f"<i class='got' style='width:{got:.1f}%'></i>"
+            f"<i class='more' style='width:{more:.1f}%'></i></div>")

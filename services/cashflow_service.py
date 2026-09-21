@@ -319,3 +319,63 @@ def monthly_series(portfolio: Portfolio, dists: dict, year: int,
     for m in range(1, 13):
         out.append((m, month_total(portfolio, dists, year, m, **kw)))
     return out
+
+
+# =====================================================================
+# 연간 배당금 목표
+# =====================================================================
+@dataclass
+class GoalProgress:
+    """올해 목표 대비 어디까지 왔나.
+
+    ⚠ **목표는 사용자가 정하는 값입니다.** 앱이 추천하거나 자동으로 잡지
+      않습니다. 얼마를 목표로 할지는 투자 판단이라 우리가 낄 자리가 아닙니다.
+    ⚠ 남은 금액을 "이만큼 더 사면 됩니다" 로 바꾸지 않습니다 — 그건 매수
+      추천이고, 이 앱이 안 하기로 한 것입니다.
+    """
+
+    goal_krw: float
+    received_krw: float          # 올해 지금까지 실제로 들어온 돈
+    expected_krw: float          # 올해 남은 달에 들어올 것으로 보이는 돈(예상 포함)
+
+    @property
+    def has_goal(self) -> bool:
+        return self.goal_krw > 0
+
+    @property
+    def percent(self) -> float:
+        """받은 돈 기준 달성률. 100 을 넘어도 그대로 돌려줍니다 —
+        넘겼으면 넘겼다고 보여주는 게 맞습니다."""
+        if not self.has_goal:
+            return 0.0
+        return self.received_krw / self.goal_krw * 100.0
+
+    @property
+    def percent_with_expected(self) -> float:
+        """예상까지 더했을 때의 달성률."""
+        if not self.has_goal:
+            return 0.0
+        return (self.received_krw + self.expected_krw) / self.goal_krw * 100.0
+
+    @property
+    def remaining_krw(self) -> float:
+        return max(0.0, self.goal_krw - self.received_krw)
+
+
+def goal_progress(portfolio: Portfolio, dists: dict, year: int,
+                  today: date | None = None,
+                  latest_rate: float | None = None) -> GoalProgress:
+    """올해 목표 대비 진행 상황.
+
+    **이미 들어온 돈**과 **앞으로 들어올 것으로 보이는 돈**을 나눠 셉니다.
+    섞으면 "벌써 다 받은 것" 처럼 보입니다 — 예상은 예상이라고 따로 둡니다.
+    """
+    today = today or config.today_local()
+    rows = build_rows(portfolio, dists, date(year, 1, 1), date(year, 12, 31),
+                      today=today, latest_rate=latest_rate)
+    received = sum(r.amount_krw or 0.0 for r in rows
+                   if r.payment_date <= today and not r.is_estimated)
+    expected = sum(r.amount_krw or 0.0 for r in rows
+                   if r.payment_date > today or r.is_estimated)
+    return GoalProgress(goal_krw=float(portfolio.dividend_goal_krw or 0.0),
+                        received_krw=received, expected_krw=expected)

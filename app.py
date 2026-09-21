@@ -30,6 +30,7 @@ from components import pitch_grid
 from components.football_pitch import football_pitch
 from components.local_store import local_store
 from components.ui import (
+    goalbar_html,
     grid_html,
     header,
     inject_css,
@@ -173,6 +174,72 @@ def _row_tax_text(r) -> str:
             f"세후 {F.won(r.after_tax_krw)}")
 
 
+def render_goal(year_total) -> None:
+    """올해 배당금 목표와 진행률.
+
+    ⚠ **목표는 사용자가 정합니다.** 앱이 추천하거나 자동으로 잡지 않습니다.
+      얼마를 목표로 할지는 투자 판단이라 우리가 낄 자리가 아닙니다.
+    ⚠ 남은 금액을 "이만큼 더 사면 됩니다" 로 바꾸지 않습니다 — 그건 매수
+      추천이고, 이 앱이 안 하기로 한 것입니다.
+    """
+    g = CF.goal_progress(portfolio, dists, today.year, today=today,
+                         latest_rate=summary.usdkrw)
+
+    if not g.has_goal:
+        with st.expander("🎯 　올해 배당금 목표 정하기　— 눌러서 펼치기 👆"):
+            note("목표를 정해 두면 얼마나 왔는지 막대로 보여드립니다. "
+                 "안 정해도 앱은 그대로 돌아갑니다.")
+            _goal_input()
+        return
+
+    left = "달성!" if g.percent >= 100 else f"{F.won(g.remaining_krw)} 남음"
+    panel(
+        f"🎯 {today.year}년 배당금 목표",
+        grid_html([
+            kcard_html(F.won(g.goal_krw), "목표", left),
+            kcard_html(F.won(g.received_krw), "지금까지 받은 돈",
+                       f"{g.percent:.0f}%"),
+            kcard_html(F.won(g.expected_krw), "올해 더 들어올 돈",
+                       "🟡 예상 포함"),
+        ], cols=3)
+        + goalbar_html(g.percent, g.percent_with_expected),
+    )
+    note(f"※ 진한 칸이 받은 돈, 흐린 칸이 들어올 것으로 보이는 돈입니다 "
+         f"(예상까지 더하면 {g.percent_with_expected:.0f}%).")
+    with st.expander("🎯 　목표 고치기"):
+        _goal_input()
+
+
+def _goal_input() -> None:
+    """목표 금액 입력칸. 평단가와 같은 방식으로 콤마·만 단위를 읽습니다."""
+    st.session_state.setdefault(
+        "goal_text",
+        F.won(portfolio.dividend_goal_krw).replace("₩", "")
+        if portfolio.dividend_goal_krw else "")
+    st.text_input("올해 받고 싶은 배당금 (원)", key="goal_text",
+                  placeholder="2,000,000  ·  200만 도 됩니다",
+                  on_change=_on_goal_changed)
+    value = _parse_money(st.session_state.get("goal_text", ""))
+    if value is None:
+        warn("숫자로 읽지 못했습니다. 숫자만 넣어 주세요.")
+        return
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("목표 저장", type="primary", width="stretch"):
+            portfolio.dividend_goal_krw = float(value)
+            st.rerun()
+    with c2:
+        if portfolio.dividend_goal_krw and st.button("목표 지우기", width="stretch"):
+            portfolio.dividend_goal_krw = 0.0
+            st.session_state["goal_text"] = ""
+            st.rerun()
+
+
+def _on_goal_changed() -> None:
+    st.session_state["goal_text"] = _format_money(
+        st.session_state.get("goal_text", ""), "KRW")
+
+
 def render_home() -> None:
     """홈.
 
@@ -248,6 +315,8 @@ def render_home() -> None:
         note(f"※ {config.TAX_DEFERRED_HELP}")
     if this_month.tax_basis_is_partial:
         note(f"※ 과세표준 미발표 {this_month.unknown_tax_basis_rows}건 — 0원으로 계산")
+
+    render_goal(year)
 
     # -- ③ 이번 달 지급 내역 (접어 둡니다) --------------------------------
     if not this_month.rows:
@@ -601,12 +670,17 @@ def render_payslip() -> None:
     render_calendar(year, month, total)
 
     st.write("")
-    section(f"{year}년 월별 배당금", "막대 위 숫자가 그 달에 들어온 금액입니다.")
+    section(f"{year}년 월별 배당금",
+            "막대 위 숫자가 그 달에 들어온 금액 · 뒤의 흐린 막대가 작년 같은 달")
     series = CF.monthly_series(portfolio, dists, year, latest_rate=summary.usdkrw)
-    st.markdown(bars_html(series, highlight=month), unsafe_allow_html=True)
+    # 작년 같은 달을 뒤에 흐리게 겹칩니다. "늘었나" 가 한눈에 보입니다.
+    last_year = CF.monthly_series(portfolio, dists, year - 1,
+                                  latest_rate=summary.usdkrw)
+    st.markdown(bars_html(series, highlight=month, compare=last_year),
+                unsafe_allow_html=True)
 
 
-def bars_html(series, highlight: int | None = None) -> str:
+def bars_html(series, highlight: int | None = None, compare=None) -> str:
     """월별 막대 그래프를 직접 그립니다.
 
     ⚠ `st.bar_chart` 를 쓰다가 바꿨습니다. 그건 월 라벨이 **누워서** 나오고,
@@ -614,11 +688,20 @@ def bars_html(series, highlight: int | None = None) -> str:
       없었습니다. 열두 달은 한눈에 들어와야 하는 양이라 직접 그립니다.
     """
     vals = [(m, (t.amount_krw or 0.0)) for m, t in series]
-    top = max((v for _, v in vals), default=0.0)
+    prev = {m: (t.amount_krw or 0.0) for m, t in (compare or [])}
+    # ⚠ 높이는 **두 해를 합쳐** 가장 큰 값 기준으로 잽니다. 올해만 보고
+    #    재면 작년 막대가 칸을 뚫고 나갑니다.
+    top = max([v for _, v in vals] + list(prev.values()) + [0.0])
     cols = []
     for m, v in vals:
         # 0 인 달도 자리를 지켜야 열두 달의 리듬이 보입니다.
         height = 4 if top <= 0 or v <= 0 else max(6, round(v / top * 120))
+        was = prev.get(m, 0.0)
+        ghost = ""
+        if was > 0:
+            gh = max(6, round(was / top * 120))
+            ghost = (f"<i class='ghost' style='height:{gh}px'"
+                     f" title='작년 {F.won(was)}'></i>")
         cls = "col"
         if v <= 0:
             cls += " zero"
@@ -627,7 +710,8 @@ def bars_html(series, highlight: int | None = None) -> str:
         label = F.won_short(v) if v > 0 else ""
         cols.append(
             f"<div class='{cls}'><div class='val'>{_esc_txt(label)}</div>"
-            f"<div class='bar' style='height:{height}px'></div>"
+            f"<div class='stack'>{ghost}"
+            f"<i class='bar' style='height:{height}px'></i></div>"
             f"<div class='lab'>{m}</div></div>"
         )
     return f"<div class='bars'>{''.join(cols)}</div>"
@@ -787,6 +871,33 @@ def render_detail() -> None:
     if nxt:
         note(f"※ {nxt.note}")
 
+    # ⚠ **과거를 보여줄 뿐 미래를 말하지 않습니다.** 두 기간의 실제 금액을
+    #   나란히 놓을 뿐이고, "앞으로도 늘 것" 이라는 뜻이 아닙니다.
+    growth = DS.dividend_growth(td, today)
+    if growth.comparable:
+        st.markdown(
+            grid_html([
+                kcard_html(F.native_amt(growth.recent_per_share, g.currency),
+                           "최근 1년 주당 배당금", f"{growth.recent_count}번 지급"),
+                kcard_html(F.native_amt(growth.previous_per_share, g.currency),
+                           "그 전 1년", f"{growth.previous_count}번 지급"),
+                kcard_html(
+                    F.pct_signed(growth.change_pct), "두 기간 차이",
+                    f"주당 {F.native_amt(abs(growth.diff_per_share), g.currency)} "
+                    f"{'늘었습니다' if growth.diff_per_share >= 0 else '줄었습니다'}",
+                    tone="up" if growth.change_pct > 0
+                         else ("down" if growth.change_pct < 0 else "")),
+            ], cols=3),
+            unsafe_allow_html=True,
+        )
+        note("※ 지난 2년의 **실제 지급액**을 나란히 놓은 것입니다. "
+             "앞으로도 그만큼 나온다는 뜻이 아닙니다.")
+    elif growth.recent_count:
+        note(f"※ 최근 1년 주당 배당금 "
+             f"{F.native_amt(growth.recent_per_share, g.currency)} "
+             f"({growth.recent_count}번). 그 전 1년은 지급 이력이 없어 "
+             f"비교하지 않았습니다.")
+
     st.write("")
     section(config.TAX_BASIS_LABEL,
             f"{config.TAX_BASIS_HELP}. 운용사가 발표하는 값이고, "
@@ -928,6 +1039,28 @@ def _on_price_changed() -> None:
         st.session_state.get("add_price_currency", "KRW"))
 
 
+def _find_holding(ticker: str, market: str, broker: str, account: str):
+    """같은 증권사·계좌에 있는 같은 종목 한 줄. 없으면 None."""
+    for h in portfolio.holdings:
+        if (h.ticker.upper() == str(ticker).upper() and h.market == market
+                and (h.broker or "") == (broker or "")
+                and (h.account or "") == (account or "")):
+            return h
+    return None
+
+
+def _existing_matches(rows, broker: str, account: str) -> set[str]:
+    """붙여넣은 것 중 **이미 등록되어 있는** 종목 이름들."""
+    out: set[str] = set()
+    for r in rows:
+        if not r.ticker:
+            continue
+        got = _find_holding(r.ticker, r.market, broker, account)
+        if got is not None:
+            out.add(got.name or got.ticker)
+    return out
+
+
 def render_paste_import() -> None:
     """증권사 잔고를 **복사해서 붙여넣기** 로 한 번에 등록.
 
@@ -986,6 +1119,19 @@ def render_paste_import() -> None:
                  + ("…" if len(got.bad) > 3 else "")
                  + " 이 줄들은 아래에서 하나씩 넣어 주세요.")
 
+        # 같은 증권사·계좌에 같은 종목이 이미 있으면 어떻게 할지 물어봅니다.
+        # 무조건 새로 추가하면 두 번째 붙여넣기에서 줄이 두 배가 됩니다.
+        dupes = _existing_matches(got.good, broker, account)
+        how = "새로 추가"
+        if dupes:
+            note(f"이미 등록된 것 {len(dupes)}개가 섞여 있습니다 "
+                 f"({', '.join(sorted(dupes)[:3])}"
+                 f"{' 외' if len(dupes) > 3 else ''}).")
+            how = st.radio("이미 있는 종목은 어떻게 할까요?",
+                           ["덮어쓰기", "수량 더하기", "건너뛰기"],
+                           horizontal=True, key="imp_dupe_how",
+                           help="같은 증권사·계좌에 같은 종목이 있을 때만 해당합니다")
+
         if got.good and st.button(f"✅ {len(got.good)}개 한 번에 등록",
                                   type="primary", width="stretch"):
             added = 0
@@ -998,10 +1144,29 @@ def render_paste_import() -> None:
                     if not hits:
                         continue
                     ticker, market, name = hits[0].ticker, hits[0].market, hits[0].name
+                shares = float(r.shares or 0)
+                price = float(r.avg_price or 0)
+                same = _find_holding(ticker, market, broker, account)
+                if same is not None and dupes:
+                    if how == "건너뛰기":
+                        continue
+                    if how == "수량 더하기":
+                        # 평단가는 **수량으로 가중평균**합니다. 그냥 새 값으로
+                        # 덮으면 원금이 틀어집니다.
+                        total = same.shares + shares
+                        if total > 0:
+                            same.avg_price = (
+                                (same.shares * same.avg_price + shares * price) / total)
+                        same.shares = total
+                    else:                       # 덮어쓰기
+                        same.shares = shares
+                        same.avg_price = price
+                    added += 1
+                    continue
                 portfolio.add(Holding(
                     ticker=ticker, market=market, name=name or ticker,
                     broker=broker or "", account=account or "", account_type=account or "",
-                    shares=float(r.shares or 0), avg_price=float(r.avg_price or 0),
+                    shares=shares, avg_price=price,
                 ))
                 added += 1
             if broker and broker not in portfolio.brokers \

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from conftest import dist, td
 
 import config
-from models.distribution import DistributionSeries
+from models.distribution import Distribution, DistributionSeries
 from models.portfolio import Holding, Portfolio
 from services import distribution_service as DS
 
@@ -140,3 +142,74 @@ def test_we_do_not_hammer_the_issuer_servers():
     """빨라지자고 남의 서버를 한꺼번에 두드릴 이유는 없습니다.
     운용사가 우리를 막으면 과세표준이 통째로 사라집니다(실제로 겪었습니다)."""
     assert DS.MAX_WORKERS <= 4
+
+
+# ============================================== 배당 성장 (과거 비교)
+def _growth_td(pairs, today=date(2026, 9, 21)):
+    """(며칠 전, 주당금액) 목록으로 TickerDistributions 를 만듭니다."""
+    from datetime import timedelta
+
+    # ⚠ conftest 의 `dist()` 는 날짜를 (연,월,일) 튜플로 받습니다. 여기서는
+    #    "며칠 전" 으로 다루는 게 읽기 쉬워서 직접 만듭니다.
+    items = [Distribution(ticker="069500",
+                          payment_date=today - timedelta(days=ago),
+                          distribution_per_share=float(amount),
+                          tax_basis_per_share=None, currency="KRW",
+                          source="테스트", status=config.STATUS_CONFIRMED)
+             for ago, amount in pairs]
+    return DS.TickerDistributions(
+        "KR", "069500", "KODEX 200",
+        series=DistributionSeries(ticker="069500", items=items, source="테스트",
+                                  tax_basis_supported=True))
+
+
+def test_growth_compares_the_last_year_with_the_one_before():
+    td = _growth_td([(30, 100), (200, 100),        # 최근 1년: 200
+                     (400, 80), (600, 70)])        # 그 전 1년: 150
+    g = DS.dividend_growth(td, date(2026, 9, 21))
+    assert g.recent_per_share == pytest.approx(200)
+    assert g.previous_per_share == pytest.approx(150)
+    assert g.change_pct == pytest.approx(33.333, rel=1e-3)
+    assert g.diff_per_share == pytest.approx(50)
+
+
+def test_a_new_etf_is_not_compared_instead_of_showing_infinity():
+    """⭐ 없는 기간을 0 으로 세면 성장률이 무한대로 나옵니다.
+    상장한 지 얼마 안 된 종목은 "비교 안 함" 이 맞습니다."""
+    td = _growth_td([(30, 100), (200, 100)])       # 그 전 1년에 지급 없음
+    g = DS.dividend_growth(td, date(2026, 9, 21))
+    assert g.comparable is False
+    assert g.change_pct is None
+    assert g.diff_per_share is None
+    assert g.recent_per_share == pytest.approx(200)   # 최근 값은 그대로 있습니다
+
+
+def test_estimates_never_count_as_growth():
+    """예상값을 넣으면 "늘었다" 가 예상 때문인지 실제 때문인지 알 수 없습니다."""
+    from datetime import timedelta
+
+    today = date(2026, 9, 21)
+    real = Distribution(ticker="069500", payment_date=today - timedelta(days=30),
+                        distribution_per_share=100.0,
+                        status=config.STATUS_CONFIRMED)
+    fake = Distribution(ticker="069500", payment_date=today - timedelta(days=10),
+                        distribution_per_share=999.0,
+                        status=config.STATUS_ESTIMATED)
+    old = Distribution(ticker="069500", payment_date=today - timedelta(days=400),
+                       distribution_per_share=100.0,
+                       status=config.STATUS_CONFIRMED)
+    td = DS.TickerDistributions(
+        "KR", "069500", "KODEX 200",
+        series=DistributionSeries(ticker="069500", items=[real, fake, old],
+                                  source="테스트", tax_basis_supported=True))
+    g = DS.dividend_growth(td, today)
+    assert g.recent_per_share == pytest.approx(100)    # 999 는 안 셉니다
+    assert g.recent_count == 1
+
+
+def test_a_ticker_with_no_history_is_simply_empty():
+    td = DS.TickerDistributions("KR", "069500", "KODEX 200",
+                                series=DistributionSeries(
+                                    ticker="069500", items=[], source="테스트"))
+    g = DS.dividend_growth(td, date(2026, 9, 21))
+    assert g.comparable is False and g.recent_count == 0
