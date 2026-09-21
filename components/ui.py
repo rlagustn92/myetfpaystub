@@ -60,10 +60,11 @@ CSS = """
     --brand:      #1454FF;
     --up:         #C7362F;   /* 한국 관습: 오른 것이 빨강 */
     --down:       #1F5FD0;
-    /* 월급 카드 — 먹색이 너무 무거워서 은은한 초록으로. 돈이 들어오는
-       카드라 초록이 뜻과도 맞습니다. 흰 글자 대비 9.3:1 로 넉넉합니다. */
-    --money:      #2C4A3E;
-    --money-line: rgba(255,255,255,.18);
+    /* 월급 카드 — 먹색이 너무 무거워서 초록으로 갔는데, #2C4A3E 는
+       "너무 찐한 초록" 이라는 지적을 받았습니다. 채도를 낮추고 한 단 밝혀
+       **이끼빛**에 가깝게 맞췄습니다. 흰 글자 대비 7.4:1 로 넉넉합니다. */
+    --money:      #3A5A4C;
+    --money-line: rgba(255,255,255,.15);
     /* 바로가기 — 각 서비스 색 (사용자 요청) */
     --naver:      #0A8040;   /* 대비 5.03 — #0B8A43 은 4.44 라 AA 미달 */
     --toss:       #2E6FE8;
@@ -118,8 +119,8 @@ CSS = """
   /* ---- 값 카드 — 테두리 없이 은은한 채움만 ---- */
   .kcard { background:var(--tint); border:none; border-radius:14px;
            padding:16px 18px; height:100%; }
-  .kcard .v { font-size:1.5rem; font-weight:800; color:var(--ink);
-              letter-spacing:-.035em; font-variant-numeric: tabular-nums;
+  .kcard .v { font-size:1.5rem; font-weight:600; color:var(--ink);
+              letter-spacing:-.04em; font-variant-numeric: tabular-nums;
               line-height:1.15; }
   .kcard .l { font-size:.8rem; color:var(--ink-soft); margin-top:5px; }
   .kcard .s { font-size:.74rem; color:var(--ink-faint); margin-top:7px; }
@@ -129,18 +130,26 @@ CSS = """
   /* ---- 이번 달 월급 — 화면에서 가장 무거운 한 덩어리 ----
      파랑 그라디언트를 먹색 단색으로 바꿨습니다. 그라디언트는 시선을 끄는
      대신 화면을 시끄럽게 합니다. 한 덩어리가 조용히 무거운 편이 낫습니다. */
-  .paycard { background:var(--money); border-radius:16px; padding:22px 24px; color:#fff; }
-  .paycard .cap { font-size:.8rem; opacity:.7; font-weight:600; }
-  .paycard .v { font-size:2.5rem; font-weight:800; letter-spacing:-.045em;
-                margin:.18rem 0 .1rem; font-variant-numeric: tabular-nums;
-                line-height:1.05; }
-  .paycard .l { font-size:.8rem; opacity:.66; }
+  .paycard { background:var(--money); border-radius:16px; padding:24px 26px; color:#fff; }
+  /* ⚠ 투명도가 곧 대비입니다. .62 는 흰 글자여도 대비 4.0 이라 AA 미달이었습니다.
+     .72 부터 4.5 를 넘습니다 — 은은하게 보이려다 안 읽히면 안 됩니다. */
+  .paycard .cap { font-size:.76rem; opacity:.72; font-weight:500;
+                  letter-spacing:.04em; }
+  /* 숫자가 "무식하게 크고 두껍다" 는 지적을 받았습니다.
+     ⚠ 굵기를 낮추면(800 -> 500) 같은 크기라도 훨씬 가볍고 우아해집니다.
+       크기는 오히려 조금 키우고 **자간을 더 좁혀** 덩어리로 보이게 했습니다.
+       큰 숫자는 굵기가 아니라 **크기와 여백**으로 무게를 갖는 편이 낫습니다. */
+  .paycard .v { font-size:2.7rem; font-weight:500; letter-spacing:-.052em;
+                margin:.3rem 0 .18rem; font-variant-numeric: tabular-nums;
+                line-height:1; }
+  .paycard .l { font-size:.78rem; opacity:.72; }
   .paycard .sub { margin-top:16px; padding-top:13px;
                   border-top:1px solid var(--money-line);
                   display:flex; gap:26px; flex-wrap:wrap; }
-  .paycard .sub .k { font-size:.72rem; opacity:.6; }
-  .paycard .sub .n { font-size:1.02rem; font-weight:700; margin-top:2px;
-                     font-variant-numeric: tabular-nums; }
+  .paycard .sub .k { font-size:.7rem; opacity:.72; letter-spacing:.02em; }
+  .paycard .sub .n { font-size:1.02rem; font-weight:600; margin-top:3px;
+                     font-variant-numeric: tabular-nums;
+                     letter-spacing:-.02em; }
 
   /* ---- 목록 한 줄 ---- */
   .row { display:flex; align-items:center; justify-content:space-between;
@@ -150,6 +159,10 @@ CSS = """
   .row .sb { font-size:.76rem; color:var(--ink-faint); margin-top:2px; }
   .row .rt { text-align:right; white-space:nowrap; }
   .row .amt { font-weight:700; font-variant-numeric: tabular-nums; }
+  /* 손익은 **한국 관습**대로 오른 것이 빨강, 내린 것이 파랑입니다.
+     회색으로 두면 플러스인지 마이너스인지 눈으로 안 잡힙니다. */
+  .row .sb.up   { color:var(--up);   font-weight:700; }
+  .row .sb.down { color:var(--down); font-weight:700; }
 
   .chip { display:inline-block; font-size:.7rem; font-weight:700; border-radius:999px;
           padding:2px 8px; background:var(--tint-deep); color:var(--ink-soft);
@@ -187,7 +200,9 @@ CSS = """
   .goalbar .got  { background:var(--money); }
   .goalbar .more { background:var(--money); opacity:.3; }
 
-  .note { font-size:.78rem; color:var(--ink-faint); }
+  /* 안내(※) 가 너무 작아 안 읽힌다는 지적을 받았습니다. 한 단 키우고
+     색도 한 단 진하게 — 읽으라고 적은 글이면 읽히게 해야 합니다. */
+  .note { font-size:.86rem; color:var(--ink-soft); line-height:1.5; }
   .warn { background:var(--warn-bg); border:1px solid var(--warn-line); border-radius:12px;
           padding:10px 14px; font-size:.84rem; color:#6E5A20; }
 
@@ -462,12 +477,18 @@ def paycard_html(amount: str, caption: str, label: str,
 
 
 def row_html(name: str, subtitle: str, amount: str, amount_sub: str = "",
-             chip: str = "", links: list[tuple[str, str]] | None = None) -> str:
-    """목록 한 줄."""
+             chip: str = "", links: list[tuple[str, str]] | None = None,
+             sub_tone: str = "") -> str:
+    """목록 한 줄.
+
+    `sub_tone` — 오른쪽 아래 작은 글씨의 색. "up"(빨강) | "down"(파랑) | "".
+    손익을 회색으로 두면 플러스인지 마이너스인지 눈으로 안 잡힙니다.
+    """
     chips = f"<span class='chip'>{_esc(chip)}</span>" if chip else ""
     if links:
         chips += linkchips(links)
-    sub = f"<div class='sb'>{_esc(amount_sub)}</div>" if amount_sub else ""
+    sub_cls = f"sb {sub_tone}".strip()
+    sub = f"<div class='{sub_cls}'>{_esc(amount_sub)}</div>" if amount_sub else ""
     return (f"<div class='row'><div><div class='nm'>{_esc(name)}{chips}</div>"
             f"<div class='sb'>{_esc(subtitle)}</div></div>"
             f"<div class='rt'><div class='amt'>{_esc(amount)}</div>{sub}</div></div>")

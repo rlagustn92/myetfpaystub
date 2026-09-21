@@ -159,6 +159,30 @@ def render_empty() -> None:
 # =====================================================================
 # 5. 홈
 # =====================================================================
+def _tone(value) -> str:
+    """손익 색. 한국 관습대로 오른 것이 빨강, 내린 것이 파랑입니다."""
+    if value is None or value == 0:
+        return ""
+    return "up" if value > 0 else "down"
+
+
+def _holding_rows(rows) -> str:
+    """보유 줄 목록 HTML. 증권사별·전체 어디서 쓰든 **같은 모양**이어야 해서
+    한 곳에서 만듭니다."""
+    out = []
+    for r in rows:
+        gain = r.profit_krw(summary.usdkrw)
+        out.append(row_html(
+            r.holding.name or r.holding.ticker,
+            f"{r.holding.where()} · {F.shares(r.holding.shares)} · 평균 "
+            f"{F.native_amt(r.holding.avg_price, r.holding.currency)}",
+            F.won(r.value_krw(summary.usdkrw)),
+            F.won_signed(gain) if gain is not None else "",
+            sub_tone=_tone(gain),
+        ))
+    return "".join(out)
+
+
 def _row_tax_text(r) -> str:
     """지급 한 줄 아래에 붙는 세금 한 마디.
 
@@ -171,6 +195,7 @@ def _row_tax_text(r) -> str:
         return config.TAX_DEFERRED_LABEL
     star = "*" if not r.has_tax_basis else ""
     return (f"{config.TAX_BASIS_LABEL} {F.won(r.taxable_basis_krw)}{star} · "
+            f"{config.WITHHOLDING_SHORT} {F.won(r.withholding_krw)} · "
             f"세후 {F.won(r.after_tax_krw)}")
 
 
@@ -211,11 +236,21 @@ def render_goal(year_total) -> None:
 
 
 def _goal_input() -> None:
-    """목표 금액 입력칸. 평단가와 같은 방식으로 콤마·만 단위를 읽습니다."""
+    """목표 금액 입력칸. 평단가와 같은 방식으로 콤마·만 단위를 읽습니다.
+
+    ⚠ **위젯이 만들어진 뒤에는 `st.session_state["goal_text"]` 를 못 건드립니다.**
+      `StreamlitWidgetAlreadyInstantiatedError` 가 납니다. "목표 지우기" 에서
+      바로 비웠다가 실제로 터졌습니다. 그래서 종목 추가 칸과 **같은 방식**으로
+      깃발만 세우고, 실제로 비우는 일은 **다음 실행 맨 위**에서 합니다.
+    """
+    # ⚠ 여기가 위젯보다 **위**여야 합니다.
+    if st.session_state.pop("goal_clear", False):
+        st.session_state["goal_text"] = ""
     st.session_state.setdefault(
         "goal_text",
         F.won(portfolio.dividend_goal_krw).replace("₩", "")
         if portfolio.dividend_goal_krw else "")
+
     st.text_input("올해 받고 싶은 배당금 (원)", key="goal_text",
                   placeholder="2,000,000  ·  200만 도 됩니다",
                   on_change=_on_goal_changed)
@@ -231,7 +266,7 @@ def _goal_input() -> None:
     with c2:
         if portfolio.dividend_goal_krw and st.button("목표 지우기", width="stretch"):
             portfolio.dividend_goal_krw = 0.0
-            st.session_state["goal_text"] = ""
+            st.session_state["goal_clear"] = True     # 비우는 건 다음 실행에서
             st.rerun()
 
 
@@ -284,8 +319,10 @@ def render_home() -> None:
     # 세금은 계좌 유형에 따라 갈립니다 — ISA·연금저축은 받을 때 안 뗍니다.
     subs = [(config.TAX_BASIS_LABEL, F.won(this_month.tax_basis_krw))]
     if this_month.has_withholding:
+        # ⚠ 마이너스 기호를 안 붙입니다. 라벨이 이미 "떼 가는 돈" 이라고
+        #   말하고 있어서, 부호까지 붙이면 잃은 돈처럼 보입니다.
         subs.append((f"{config.WITHHOLDING_LABEL} ({config.WITHHOLDING_RATE_LABEL})",
-                     "-" + F.won(this_month.withholding_krw)))
+                     F.won(this_month.withholding_krw)))
         subs.append((config.AFTER_TAX_LABEL, F.won(this_month.after_tax_krw)))
     if this_month.has_tax_deferred:
         subs.append((config.TAX_DEFERRED_LABEL, F.won(this_month.tax_deferred_krw)))
@@ -295,7 +332,8 @@ def render_home() -> None:
         paycard_html(
             F.won(this_month.amount_krw),
             f"{today.year}년 {today.month}월",
-            f"이번달 {'예상 ' if this_month.has_estimate else ''}배당금",
+            f"이번달 {'예상 ' if this_month.has_estimate else ''}배당금 "
+            f"({config.PRETAX_SUFFIX})",
             subs,
         )
         + "<div style='height:10px'></div>"
@@ -359,28 +397,31 @@ def render_home() -> None:
                 # 차트·뉴스처럼 이 앱이 안 만드는 건 증권사 화면으로 넘깁니다.
                 # 만들 수 있는 주소만 옵니다(빈 페이지로 보내지 않으려고).
                 links=link_service.links_for(g.market, g.ticker),
+                sub_tone=_tone(gain),
             )
         st.markdown(rows, unsafe_allow_html=True)
 
     # -- ⑤ 증권사별 ------------------------------------------------------
     section("증권사별 보유", "증권사를 누르면 계좌별로 쪼개서 볼 수 있습니다.")
-    for g in PS.group_by_broker(summary):
+
+    # 증권사가 하나뿐이어도 **전체**를 먼저 둡니다. 증권사별로 나뉘어 있으면
+    # "다 합치면 얼마지?" 를 볼 자리가 없습니다.
+    brokers = PS.group_by_broker(summary)
+    with st.expander(f"**전체**　{F.won(summary.total_value_krw)}　"
+                     f"· {len(brokers)}개 증권사"):
+        st.markdown(_holding_rows(
+            [r for g in brokers for r in g.rows]), unsafe_allow_html=True)
+
+    for g in brokers:
         share = (f" · 전체의 {g.value_krw / summary.total_value_krw * 100:.0f}%"
                  if summary.total_value_krw > 0 else "")
         with st.expander(f"**{g.broker}**　{F.won(g.value_krw)}{share}"):
             for account, value in sorted(g.accounts.items(), key=lambda x: -x[1]):
                 st.markdown(f"**{account}** — {F.won(value)}")
-                inner = "".join(
-                    row_html(r.holding.name or r.holding.ticker,
-                             f"{F.shares(r.holding.shares)} · 평균 "
-                             f"{F.native_amt(r.holding.avg_price, r.holding.currency)}",
-                             F.won(r.value_krw(summary.usdkrw)),
-                             F.won_signed(r.profit_krw(summary.usdkrw))
-                             if r.profit_krw(summary.usdkrw) is not None else "")
-                    for r in g.rows
-                    if (r.holding.account or "계좌 미지정") == account
-                )
-                st.markdown(inner, unsafe_allow_html=True)
+                st.markdown(_holding_rows(
+                    [r for r in g.rows
+                     if (r.holding.account or "계좌 미지정") == account]),
+                    unsafe_allow_html=True)
 
     st.write("")
     render_pitch(this_month, year)
@@ -606,7 +647,8 @@ def render_payslip() -> None:
         )
         # 급여명세서: **받은 돈 - 뗀 세금 = 실수령**.
         cards = [
-            kcard_html(F.won(total.amount_krw), f"{month}월 배당금",
+            kcard_html(F.won(total.amount_krw),
+                       f"{month}월 배당금 ({config.PRETAX_SUFFIX})",
                        "예상값 포함" if total.has_estimate else "확인된 금액"),
             kcard_html(F.won(total.tax_basis_krw), config.TAX_BASIS_LABEL,
                        f"미발표 {total.unknown_tax_basis_rows}건은 0원"
@@ -614,9 +656,9 @@ def render_payslip() -> None:
         ]
         if total.has_withholding:
             cards.append(kcard_html(
-                "-" + F.won(total.withholding_krw),
+                F.won(total.withholding_krw),
                 f"{config.WITHHOLDING_LABEL} ({config.WITHHOLDING_RATE_LABEL})",
-                "일반계좌만", tone="down"))
+                "일반계좌에서 떼 갑니다"))
             cards.append(kcard_html(F.won(total.after_tax_krw),
                                     config.AFTER_TAX_LABEL, "세금 떼고 들어올 돈"))
         if total.has_tax_deferred:
@@ -638,16 +680,16 @@ def render_payslip() -> None:
                     "ETF": r.name,
                     "어디에": f"{r.holding.broker or '-'} · {r.holding.account or '-'}",
                     "수량": F.shares(r.holding.shares),
-                    "배당금": F.won(r.amount_krw),
+                    f"배당금({config.PRETAX_SUFFIX})": F.won(r.amount_krw),
                     # ⚠ 과세표준액입니다. 세율을 곱한 값이 아닙니다.
                     #    미발표는 셀에 0원만 적고, 몇 건인지는 표 **아래 한 줄**로
                     #    알립니다 — 셀에 긴 글이 섞이면 표가 지저분해집니다.
                     config.TAX_BASIS_LABEL: F.won(r.taxable_basis_krw)
                                             + ("*" if not r.has_tax_basis else ""),
-                    config.WITHHOLDING_LABEL: ("-" + F.won(r.withholding_krw)
+                    config.WITHHOLDING_SHORT: (F.won(r.withholding_krw)
                                                if r.withholding_krw is not None
                                                else config.TAX_DEFERRED_LABEL),
-                    "실수령": F.won(r.after_tax_krw),
+                    "세후 입금": F.won(r.after_tax_krw),
                     "지급기준일": (F.ymd(r.dist.record_date) if r.dist.record_date
                               else "-"),
                     "": "🟡" if r.is_estimated else "🟢",
@@ -850,19 +892,20 @@ def render_detail() -> None:
     a, b, cc = st.columns(3)
     with a:
         kcard(F.native_amt(last.distribution_per_share if last else None, g.currency),
-              "가장 최근 주당 분배금",
+              f"가장 최근 주당 배당금 ({config.PRETAX_SUFFIX})",
               F.ymd(last.payment_date) if last else "")
     with b:
         mine = (last.distribution_per_share * g.total_shares) if last else None
         # "그때 내 수량이면 받는 금액" 이라고 적었더니 무슨 말인지 모르겠다는
         # 이야기를 들었습니다. 지금 갖고 있는 수량으로 환산한 금액입니다.
         kcard(F.won(fx_service.to_krw(mine, g.currency, summary.usdkrw)),
-              f"내 {F.shares(g.total_shares)} 기준 금액", DS.cycle_label(interval))
+              f"내 {F.shares(g.total_shares)} 기준 금액 ({config.PRETAX_SUFFIX})",
+              DS.cycle_label(interval))
     with cc:
         if nxt:
             mine_next = nxt.distribution_per_share * g.total_shares
             kcard(F.won(fx_service.to_krw(mine_next, g.currency, summary.usdkrw)),
-                  "다음 예상 배당금",
+                  f"다음 예상 배당금 ({config.PRETAX_SUFFIX})",
                   f"🟡 {F.ymd(nxt.payment_date)} 예상")
         else:
             kcard(config.NO_DATA_TEXT, "다음 예상 배당금",

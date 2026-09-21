@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import os
+
+import config
 from datetime import date
 
 import pytest
@@ -377,3 +379,99 @@ def test_pasting_the_same_holding_twice_can_merge_instead_of_duplicating(
     assert len(p.holdings) == 1                    # 줄이 안 늘어납니다
     assert p.holdings[0].shares == 200
     assert p.holdings[0].avg_price == pytest.approx(35000)   # 가중평균
+
+
+def test_clearing_the_goal_does_not_crash(offline, fake_search):
+    """⭐ 실제로 터졌던 버그입니다.
+
+    `StreamlitWidgetAlreadyInstantiatedError` — 위젯이 만들어진 **뒤에**
+    `st.session_state["goal_text"]` 를 비우려 했기 때문입니다. 종목 추가 칸과
+    같은 함정인데 목표 입력칸에서 또 밟았습니다. 깃발만 세우고 실제로 비우는
+    일은 다음 실행 맨 위에서 합니다.
+    """
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    [b for b in at.button if "예시" in b.label][0].click().run()
+
+    box = [t for t in at.text_input if "받고 싶은 배당금" in t.label]
+    assert box, "목표 입력칸이 있어야 합니다"
+    box[0].set_value("2,000,000").run()
+    [b for b in at.button if b.label == "목표 저장"][0].click().run()
+    assert not at.exception
+    assert at.session_state["store"].active().dividend_goal_krw == 2_000_000
+
+    clear = [b for b in at.button if b.label == "목표 지우기"]
+    assert clear, "목표가 있으면 지우기 버튼이 나와야 합니다"
+    clear[0].click().run()
+    assert not at.exception, f"목표 지우기에서 죽었습니다: {at.exception}"
+    assert at.session_state["store"].active().dividend_goal_krw == 0.0
+    # 입력칸도 비어 있어야 합니다 (다음 실행 맨 위에서 비웁니다)
+    assert [t for t in at.text_input if "받고 싶은 배당금" in t.label][0].value == ""
+
+
+def test_gains_are_red_and_losses_are_blue_in_lists(offline, fake_search):
+    """한국 관습대로 오른 것이 빨강, 내린 것이 파랑입니다.
+    회색으로 두면 플러스인지 마이너스인지 눈으로 안 잡힙니다."""
+    import app as A
+    assert A._tone(1000) == "up"
+    assert A._tone(-1000) == "down"
+    assert A._tone(0) == ""
+    assert A._tone(None) == ""
+
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    [b for b in at.button if "예시" in b.label][0].click().run()
+    text = " ".join(m.value for m in at.markdown)
+    assert "class='sb up'" in text or "class='sb down'" in text
+
+
+def test_there_is_an_all_brokers_view(offline, fake_search):
+    """증권사별로 나뉘어 있으면 "다 합치면 얼마지?" 를 볼 자리가 없습니다.
+
+    ⚠ 펼침(expander)의 **라벨은 `at.markdown` 에 안 들어옵니다.** 그래서
+      화면 글자가 아니라 코드가 그 자리를 만드는지를 봅니다.
+    """
+    src = open(APP, encoding="utf-8").read()
+    assert "**전체**" in src, "전체 증권사 펼침이 없습니다"
+    assert "_holding_rows(" in src
+
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    [b for b in at.button if "예시" in b.label][0].click().run()
+    assert not at.exception
+
+
+def test_a_payout_row_says_pretax_withholding_and_after_tax(offline, fake_search):
+    """세전인지 세후인지 안 적으면 통장에 꽂히는 돈으로 오해합니다.
+
+    ⚠ 화면 글자로 확인하면 offline 픽스처에는 분배금이 없어서 늘 통과합니다
+      (아무것도 안 그려지니까요). **함수를 직접** 부릅니다.
+    """
+    import app as A
+    from datetime import date as _date
+
+    from models.distribution import Distribution
+    from models.portfolio import Holding
+    from services import cashflow_service as CF
+
+    def row(account):
+        h = Holding(ticker="069500", market="KR", name="KODEX 200",
+                    broker="증권사", account=account, account_type=account,
+                    shares=100, avg_price=30000)
+        return CF.PayslipRow(
+            payment_date=_date(2026, 9, 17), holding=h,
+            dist=Distribution(ticker="069500", payment_date=_date(2026, 9, 17),
+                              distribution_per_share=1000.0,
+                              tax_basis_per_share=1000.0),
+            amount_krw=100000.0, tax_basis_krw=100000.0)
+
+    text = A._row_tax_text(row("일반"))
+    assert config.TAX_BASIS_LABEL in text          # 과세표준액
+    assert config.WITHHOLDING_SHORT in text        # 원천징수액
+    assert "세후" in text
+    # 세금을 안 떼는 계좌는 그 한 마디만
+    assert A._row_tax_text(row("ISA")) == config.TAX_DEFERRED_LABEL
+
+
+def test_the_tax_amount_is_not_shown_as_a_negative_number():
+    """라벨이 이미 "떼 가는 돈" 이라고 말합니다. 부호까지 붙이면 잃은 돈처럼
+    보입니다(사용자 지적)."""
+    src = open(APP, encoding="utf-8").read()
+    assert '"-" + F.won(' not in src, "금액 앞에 마이너스를 붙이는 곳이 남아 있습니다"

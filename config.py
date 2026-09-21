@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 # =====================================================================
 # 사용자에게 보이는 변화가 있으면 **아주 작은 수정이라도** 이 숫자를 올립니다.
 # 화면 헤더의 서비스 이름 옆에 그대로 표시됩니다.
-APP_VERSION: str = "0.21.0"
+APP_VERSION: str = "0.22.0"
 
 APP_NAME: str = "MY ETF 급여명세서"
 APP_TAGLINE: str = "여러 증권사에 흩어진 내 ETF와 매달 들어오는 돈을 한눈에"
@@ -189,10 +189,15 @@ TAX_DEFERRED_LABEL: str = "세금 안 뗌"
 # ⚠ 화면 문구는 **짧게**. 사용자가 구구절절한 설명을 싫어합니다.
 #    긴 설명이 필요하면 표 아래 한 줄로, 그것도 한 문장으로.
 TAX_DEFERRED_HELP: str = "ISA·연금저축·IRP 는 세금 없이 그대로 입금됩니다"
-AFTER_TAX_LABEL: str = "세후 예상"
-WITHHOLDING_LABEL: str = "예상 세금"
+AFTER_TAX_LABEL: str = "세후 예상 입금액"
+# "예상 세금" 만으로는 무엇에서 떼는 돈인지 안 보입니다. **원천징수액**이라고
+# 적어야 증권사 내역과 말이 맞습니다.
+WITHHOLDING_LABEL: str = "예상 원천징수액"
+WITHHOLDING_SHORT: str = "원천징수액"
+# 배당금은 **세전**입니다. 안 적으면 통장에 꽂히는 돈으로 오해합니다.
+PRETAX_SUFFIX: str = "세전"
 WITHHOLDING_HELP: str = (
-    f"일반계좌 과세표준의 {WITHHOLDING_RATE_LABEL} · 예상값입니다"
+    f"일반계좌에서 과세표준액의 {WITHHOLDING_RATE_LABEL} 를 떼 갑니다 · 예상값"
 )
 
 # ⚠ 운용사가 아직 과세표준을 발표하지 않은 건은 **0원으로 셉니다.**
