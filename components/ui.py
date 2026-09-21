@@ -192,6 +192,9 @@ CSS = """
   .cal .d .m { font-size:.78rem; font-weight:800; color:var(--ink); margin-top:6px;
                font-variant-numeric: tabular-nums; line-height:1.2; }
   .cal .d.pay { background:var(--tint); border-color:var(--line); }
+  /* 오늘 — 달력에서 눈이 헤매지 않게 한 칸만 또렷하게 */
+  .cal .d.today { border-color:var(--ink); box-shadow:inset 0 0 0 1px var(--ink); }
+  .cal .d.today .n { color:var(--ink); font-weight:800; }
 
   /* ===================================================================
      펼쳐 보는 칸 — 누를 수 있다는 걸 눈에 보이게

@@ -654,12 +654,14 @@ def render_calendar(year: int, month: int, total: CF.PeriodTotal) -> None:
     for day in range(1, days_in_month + 1):
         d = date(year, month, day)
         got = by_day.get(d)
+        # 오늘이 어디인지 표시가 없으면 달력에서 눈이 헤맵니다.
+        cls = "d today" if d == today else "d"
         if got:
             mark = "🟡" if got.has_estimate else ""
-            cells.append(f"<div class='d pay'><div class='n'>{day}</div>"
+            cells.append(f"<div class='{cls} pay'><div class='n'>{day}</div>"
                          f"<div class='m'>+{F.won_short(got.amount_krw)}{mark}</div></div>")
         else:
-            cells.append(f"<div class='d'><div class='n'>{day}</div></div>")
+            cells.append(f"<div class='{cls}'><div class='n'>{day}</div></div>")
     cells.append("</div>")
     st.markdown("".join(cells), unsafe_allow_html=True)
 

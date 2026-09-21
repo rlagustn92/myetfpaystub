@@ -7,6 +7,8 @@ from datetime import date
 from conftest import dist, td
 
 import config
+from models.distribution import DistributionSeries
+from models.portfolio import Holding, Portfolio
 from services import distribution_service as DS
 
 TODAY = date(2026, 9, 20)
@@ -80,3 +82,61 @@ def test_upcoming_prefers_announced_over_estimate():
     assert len(got) == 1
     assert got[0].distribution_per_share == 999.0
     assert got[0].status == config.STATUS_CONFIRMED   # 발표된 값은 예상이 아닙니다
+
+
+# ================================================ 여러 갈래로 나눠 받기
+def test_every_ticker_comes_back_even_though_they_are_fetched_in_parallel(monkeypatch):
+    """나눠 받으면서 **한 종목이라도 빠지면** 그 종목의 배당금이 통째로
+    화면에서 사라집니다. 에러는 안 납니다."""
+    p = Portfolio()
+    for code in ("069500", "498400", "402970", "360750", "133690"):
+        p.add(Holding(ticker=code, market="KR", name=f"ETF {code}",
+                      broker="증권사", account="일반", account_type="일반",
+                      shares=10, avg_price=10000))
+
+    def fake(market, ticker, name):
+        return DistributionSeries(ticker=ticker, items=[], source="가짜",
+                                  tax_basis_supported=True)
+
+    monkeypatch.setattr(DS.registry, "get_distributions", fake)
+    got = DS.fetch_all(p)
+    assert set(got) == {("KR", c) for c in
+                        ("069500", "498400", "402970", "360750", "133690")}
+    assert all(td.ok for td in got.values())
+
+
+def test_one_broken_ticker_does_not_take_the_others_down(monkeypatch):
+    """종목 하나가 터져도 나머지는 살아야 합니다. 나눠 받으면 예외가 다른
+    갈래에서 올라오므로 더 조심해야 합니다."""
+    p = Portfolio()
+    for code in ("069500", "498400", "402970"):
+        p.add(Holding(ticker=code, market="KR", name=f"ETF {code}",
+                      broker="증권사", account="일반", account_type="일반",
+                      shares=10, avg_price=10000))
+
+    def fake(market, ticker, name):
+        if ticker == "498400":
+            raise RuntimeError("펑")
+        return DistributionSeries(ticker=ticker, items=[], source="가짜",
+                                  tax_basis_supported=True)
+
+    monkeypatch.setattr(DS.registry, "get_distributions", fake)
+    got = DS.fetch_all(p)
+    assert len(got) == 3
+    assert got[("KR", "498400")].ok is False
+    assert got[("KR", "498400")].error          # 왜 안 됐는지 말해 줘야 합니다
+    assert got[("KR", "069500")].ok is True
+
+
+def test_an_empty_portfolio_starts_no_threads(monkeypatch):
+    called = []
+    monkeypatch.setattr(DS.registry, "get_distributions",
+                        lambda *a: called.append(a))
+    assert DS.fetch_all(Portfolio()) == {}
+    assert called == []
+
+
+def test_we_do_not_hammer_the_issuer_servers():
+    """빨라지자고 남의 서버를 한꺼번에 두드릴 이유는 없습니다.
+    운용사가 우리를 막으면 과세표준이 통째로 사라집니다(실제로 겪었습니다)."""
+    assert DS.MAX_WORKERS <= 4
