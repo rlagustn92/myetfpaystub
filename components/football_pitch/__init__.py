@@ -51,6 +51,8 @@ def football_pitch(
     capture_filename: str = "",
     comment_text: str = "",
     skin: dict | None = None,
+    banner_top: str = "",
+    banner_bottom: str = "",
     key: str | None = None,
 ):
     """세로 전술판 컴포넌트.
@@ -81,8 +83,12 @@ def football_pitch(
 
     skin 은 경기장 테마입니다 (`components.skins.Skin.to_dict()`).
     잔디 두 톤·라인·빈 자리 점선·광고보드 두 색·강조색을 CSS 변수로 꽂습니다.
-    ⚠ **유니폼 색은 스킨이 바꾸지 않습니다** — 유니폼은 운용사 브랜드를 나타내는
-    정보라서, 스킨이 물들이면 그 정보가 사라집니다.
+    ⚠ **유니폼 몸통 바탕색은 스킨이 바꾸지 않습니다** — 그 색이 운용사 브랜드라서,
+    스킨이 물들이면 어느 운용사 상품인지 알 수 없게 됩니다. 스킨이 쓰는 건
+    소매·깃·몸통 무늬, 그리고 반바지(소매 색)·양말(깃 색)뿐입니다.
+
+    banner_top / banner_bottom 은 골대 뒤 응원 배너 글자입니다. 비우면 안 그립니다.
+    색은 스킨(광고보드 두 색 + 강조색)을 그대로 따릅니다.
     """
     return _component_func(
         players=players,
@@ -97,6 +103,8 @@ def football_pitch(
         capture_filename=capture_filename,
         comment_text=comment_text,
         skin=skin,
+        banner_top=banner_top,
+        banner_bottom=banner_bottom,
         key=key,
         default=None,
     )

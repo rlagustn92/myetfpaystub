@@ -318,19 +318,27 @@ def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None
         today=today,
     )
 
-    # 전술판은 세로로 긴 그림이라 화면 전체 폭을 쓰면 너무 커집니다. 가운데로 모읍니다.
-    _, mid, _ = st.columns([1, 2, 1])
+    # 전술판을 가운데로 모으되 넉넉하게 씁니다. 카드에 반바지·양말이 붙어 세로로
+    # 길어졌기 때문에, 판이 좁으면 위아래 줄끼리 카드가 겹칩니다.
+    # 비율(세로/가로)도 실제 축구장에 가깝게 늘렸습니다(96/72=1.33 -> 1.45).
+    skin_now = skin_service.current(portfolio)
+    _, mid, _ = st.columns([1, 8, 1])
     with mid:
         result = football_pitch(
             players=payload.players,
             slots=pitch_grid.slot_meta(),
-            height=760,
+            height=1100,
+            aspect_ratio=1.45,
+            # 골대 뒤 배너 — 위는 스킨 이름, 아래는 서비스 이름.
+            # 공유된 그림을 본 사람이 "저 경기장 뭐야" 를 물어볼 수 있게 합니다.
+            banner_top=skin_now.name.replace(" Edition", ""),
+            banner_bottom=config.APP_NAME,
             summary=capture_summary,
             legend=capture_legend,
             footer=f"{config.APP_ICON} {config.APP_NAME} v{config.APP_VERSION}",
             capture_filename=f"내_ETF_전술판_{today:%Y%m%d}.png",
             comment_text=comment,
-            skin=skin_service.current(portfolio).to_dict(),
+            skin=skin_now.to_dict(),
             key="pitch",
         )
 
