@@ -92,22 +92,32 @@ def test_hose_is_pure_team_colour(skin):
 
 
 @pytest.mark.parametrize("skin", skins.SKINS, ids=lambda s: s.id)
-def test_every_skin_has_a_chant(skin):
-    """골대 뒤 배너 글자. 영어 스킨 이름을 적었더니 팀이 전혀 연상되지 않아서
-    그 나라 말 응원 구호로 바꿨습니다."""
-    assert skin.chant.strip(), f"{skin.id} 응원 구호가 없습니다"
+def test_every_skin_has_both_chants(skin):
+    """골대 뒤 배너는 위아래 둘 다 응원 구호입니다. 아래쪽에 서비스 이름을 적었더니
+    경기장 느낌이 깨져서 바꿨습니다."""
+    assert skin.chant.strip(), f"{skin.id} 위 배너 구호가 없습니다"
+    assert skin.chant_home.strip(), f"{skin.id} 아래 배너 구호가 없습니다"
+    assert skin.chant != skin.chant_home, f"{skin.id} 위아래가 같습니다"
 
 
 def test_chants_avoid_club_slogans_and_songs():
     """지명 + 일반 응원어는 괜찮지만, **구단 공식 슬로건·응원가 제목·별칭**은
     등록상표이거나 저작물입니다. 실수로 들어가는 것을 막습니다."""
     banned = [
+        # 공식 슬로건 · 응원가 제목
         "hala madrid", "mia san mia", "you'll never walk alone", "ynwa",
         "glory glory", "blue moon", "blue is the colour", "carefree",
-        "visca", "forever blowing bubbles", "on me head", "red army",
-        "i am from tottenham", "we are the pride",
+        "visca", "forever blowing bubbles", "red army", "echte liebe",
+        "nunca deixa de", "we are the pride",
+        # 구단 별칭 — 같은 뜻이라도 일반 표현으로 풀어 써야 합니다
+        # (예: rossonero -> "rosso e nero")
+        "blaugrana", "rojiblanco", "bianconero", "rossonero", "nerazzurro",
+        "giallorosso", "merengue", "colchonero", "schwarzgelb", "gunners",
+        "lilywhite", "toffees", "magpies",
+        # ⚠ "hoops"/"stripes" 는 별칭이 아니라 **유니폼 무늬 용어**입니다
+        #    (hoops = 가로 줄무늬, stripes = 세로 줄무늬). 막지 않습니다.
     ]
-    blob = " ".join(s.chant for s in skins.SKINS).lower()
+    blob = " ".join(f"{s.chant} {s.chant_home}" for s in skins.SKINS).lower()
     hits = [w for w in banned if w in blob]
     assert not hits, f"구단 슬로건/응원가가 들어갔습니다: {hits}"
 
@@ -126,7 +136,7 @@ def test_to_dict_uses_the_keys_the_frontend_reads():
     d = skins.get("london-red").to_dict()
     assert set(d) >= {"turfA", "turfB", "mow", "line", "slot", "frameA", "frameB",
                       "stand", "accent", "sleeve", "trim", "pattern", "patternColor",
-                      "shorts", "socks", "sockBand", "chant"}
+                      "shorts", "socks", "sockBand", "chant", "chantHome", "badge"}
     assert d["frameA"] == skins.get("london-red").frame_a
     assert d["sleeve"] == "#FFFFFF"          # 붉은 몸통에 흰 소매
 

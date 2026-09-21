@@ -333,7 +333,7 @@ def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None
             # 영어 스킨 이름을 적었더니 팀이 전혀 연상되지 않아서 바꿨습니다.
             # (스킨 이름은 📸 캡처 이미지 아래에 따로 새겨집니다)
             banner_top=skin_now.chant or skin_now.name.replace(" Edition", ""),
-            banner_bottom=config.APP_NAME,
+            banner_bottom=skin_now.chant_home or config.APP_NAME,
             summary=capture_summary,
             legend=capture_legend,
             footer=f"{config.APP_ICON} {config.APP_NAME} v{config.APP_VERSION}",
@@ -380,12 +380,15 @@ def render_skin_picker() -> None:
         # ⚠ note() 는 글자를 그대로 이스케이프합니다(마크다운이 아닙니다).
         #    여기에 ** 를 쓰면 별표가 그대로 찍힙니다.
         note(f"{labels[picked].korean}")
-        note("스킨은 경기장(잔디·라인·광고보드)만 바꿉니다. "
-             "유니폼 색은 운용사를 나타내는 정보라 그대로 둡니다.")
+        note("스킨은 경기장과 소매·깃·하의만 바꿉니다. "
+             "유니폼 몸통 색은 운용사를 나타내는 정보라 그대로 둡니다.")
+        # 접힌 칸 안이 아니라 **항상 보이는 자리**에 둡니다. 의도를 분명히 하는 문구라
+        # 사용자가 펼쳐야 보이면 의미가 없습니다.
+        note(config.SKIN_DISCLAIMER)
 
     with st.expander(f"스킨 전체 보기 ({len(options)}개)"):
         skin_gallery(options, now.id)
-        note("색 조합과 지명으로만 만든 테마입니다. 실제 구단명·별칭·엠블럼은 쓰지 않았습니다.")
+        note(config.SKIN_DISCLAIMER)
 
 
 # =====================================================================

@@ -46,7 +46,7 @@ TIER_PREMIUM = "premium"
 # 잔디 깎기 무늬. 프론트엔드(index.html)의 applySkin / drawTurf 가 아는 값입니다.
 MOWS = ("bands", "vertical", "checks", "diagonal")
 # 유니폼 무늬. 몸통 바탕(운용사 색) 위에 덧입힙니다.
-PATTERNS = ("plain", "stripes", "hoops", "center", "sash")
+PATTERNS = ("plain", "stripes", "hoops", "center", "sash", "pinstripe")
 
 
 @dataclass(frozen=True)
@@ -67,7 +67,8 @@ class Skin:
     shorts          반바지 색   ⭐ 실제 그 팀 조합을 그대로 씁니다
     socks           양말 색     ⭐
     sock_band       양말 상단 띠 색 (없으면 안 그림)
-    chant           골대 뒤 응원 배너 글자. **그 나라 말**로 적습니다
+    chant           위(상대 골문) 배너 글자. **그 나라 말**로 적습니다
+    chant_home      아래(우리 진영) 배너 글자
     badge           센터서클에 칠할 짧은 글자. **지명 약자**만 씁니다(구단 약칭 아님)
     """
 
@@ -91,6 +92,7 @@ class Skin:
     socks: str = ""
     sock_band: str = ""
     chant: str = ""
+    chant_home: str = ""
     badge: str = ""
     tier: str = TIER_PREMIUM
 
@@ -111,7 +113,7 @@ class Skin:
             # 하의는 **전부 팀 색**입니다. 몸통(= 운용사)에서 아무것도 끌어오지
             # 않습니다. 끌어오면 카드마다 하의가 달라져서 한 팀으로 안 보입니다.
             "shorts": self.shorts, "socks": self.socks, "sockBand": self.sock_band,
-            "chant": self.chant, "badge": self.badge,
+            "chant": self.chant, "chantHome": self.chant_home, "badge": self.badge,
         }
 
 
@@ -126,7 +128,8 @@ SKINS: tuple[Skin, ...] = (
          sleeve="", trim="", pattern="plain", tier=TIER_FREE,
          shorts="#FFFFFF", socks="#2C3238",
          chant="MY ETF PAYSTUB",
-         badge="ETF"),
+         badge="ETF",
+         chant_home="내 ETF 전술판"),
 
     # ---- 잉글랜드 ----------------------------------------------------
     Skin("london-red", "London Red Edition", "런던 레드 — 붉은 몸통에 흰 소매",
@@ -135,66 +138,75 @@ SKINS: tuple[Skin, ...] = (
          "#C8102E", "#FFFFFF", "#F4E3E5", "#E8C34A",
          sleeve="#FFFFFF", trim="#E8C34A", pattern="plain",
          shorts="#FFFFFF", socks="#FFFFFF", sock_band="#C8102E",
-         chant="COME ON YOU REDS",
-         badge="LDN"),
+         chant="NORTH LONDON RED",
+         badge="LDN",
+         chant_home="RED & WHITE"),
     Skin("london-blue", "London Blue Edition", "런던 블루 — 로열블루",
          "#2C8A3C", "#288136", "vertical",
          "rgba(255,255,255,0.82)", "rgba(255,255,255,0.45)",
          "#034694", "#FFFFFF", "#E4ECF7", "#DBA111",
          sleeve="#034694", trim="#DBA111", pattern="plain",
          shorts="#034694", socks="#FFFFFF", sock_band="#034694",
-         chant="COME ON YOU BLUES",
-         badge="LDN"),
+         chant="WEST LONDON BLUE",
+         badge="LDN",
+         chant_home="BLUE & WHITE"),
     Skin("thames-white", "Thames White Edition", "템스 화이트 — 흰색과 네이비",
          "#2F9040", "#2B873A", "bands",
          "rgba(255,255,255,0.86)", "rgba(255,255,255,0.48)",
          "#FFFFFF", "#132257", "#EEF1F7", "#132257",
          sleeve="#FFFFFF", trim="#132257", pattern="plain",
          shorts="#132257", socks="#FFFFFF", sock_band="#132257",
-         chant="COME ON YOU WHITES",
-         badge="LDN"),
+         chant="NORTH LONDON WHITE",
+         badge="LDN",
+         chant_home="WHITE & NAVY"),
     Skin("manchester-red", "Manchester Red Edition", "맨체스터 레드 — 붉은색과 검정",
          "#2C8A3C", "#287F36", "checks",
          "rgba(255,255,255,0.82)", "rgba(255,255,255,0.45)",
          "#DA020E", "#1A1A1A", "#F6E3E4", "#FBE122",
          sleeve="#DA020E", trim="#FBE122", pattern="plain",
          shorts="#FFFFFF", socks="#1A1A1A", sock_band="#DA020E",
-         chant="PRIDE OF MANCHESTER",
-         badge="MCR"),
+         chant="MANCHESTER RED",
+         badge="MCR",
+         chant_home="RED · WHITE · BLACK"),
     Skin("manchester-sky", "Manchester Sky Edition", "맨체스터 스카이 — 하늘색",
          "#309242", "#2C893C", "bands",
          "rgba(255,255,255,0.86)", "rgba(255,255,255,0.48)",
          "#6CABDD", "#FFFFFF", "#E7F1FA", "#1C2C5B",
          sleeve="#6CABDD", trim="#1C2C5B", pattern="plain",
          shorts="#FFFFFF", socks="#6CABDD", sock_band="#1C2C5B",
-         chant="MANCHESTER SKY BLUE",
-         badge="MCR"),
+         chant="MANCHESTER SKY",
+         badge="MCR",
+         chant_home="SKY BLUE"),
     Skin("merseyside-red", "Merseyside Red Edition", "머지사이드 레드 — 온통 붉은색",
          "#2B8739", "#277E34", "bands",
          "rgba(255,255,255,0.82)", "rgba(255,255,255,0.45)",
          "#C8102E", "#F6EB61", "#F5E2E5", "#00B2A9",
          sleeve="#C8102E", trim="#F6EB61", pattern="plain",
          shorts="#C8102E", socks="#C8102E", sock_band="#FFFFFF",
-         chant="COME ON MERSEYSIDE",
-         badge="LIV"),
+         chant="MERSEYSIDE RED",
+         badge="LIV",
+         chant_home="ALL RED"),
     Skin("tyneside-stripes", "Tyneside Stripes Edition", "타인사이드 — 검정·흰 세로줄",
          "#2A8438", "#267B33", "vertical",
          "rgba(255,255,255,0.86)", "rgba(255,255,255,0.48)",
          "#241F20", "#FFFFFF", "#ECECEE", "#41B6E6",
          sleeve="#241F20", trim="#FFFFFF", pattern="stripes", pattern_color="#241F20",
          shorts="#241F20", socks="#241F20", sock_band="#FFFFFF",
-         chant="HOWAY THE LADS",
-         badge="TYN"),
+         chant="HOWAY TYNESIDE",
+         badge="TYN",
+         chant_home="BLACK & WHITE"),
 
     # ---- 스페인 ------------------------------------------------------
     Skin("madrid-white", "Madrid White Edition", "마드리드 화이트 — 흰색과 금색",
          "#319543", "#2D8B3D", "checks",
          "rgba(255,255,255,0.88)", "rgba(255,255,255,0.5)",
-         "#FFFFFF", "#FEBE10", "#F4F2EA", "#00529F",
-         sleeve="#FFFFFF", trim="#FEBE10", pattern="plain",
+         "#FFFFFF", "#00529F", "#F4F2EA", "#FEBE10",
+         sleeve="#FFFFFF", trim="#FEBE10",
+         pattern="pinstripe", pattern_color="#FEBE10",
          shorts="#FFFFFF", socks="#FFFFFF", sock_band="#FEBE10",
          chant="¡VAMOS MADRID!",
-         badge="MAD"),
+         badge="MAD",
+         chant_home="BLANCO Y ORO"),
     Skin("catalonia-claret", "Catalonia Claret Edition", "카탈루냐 — 자주·감청 세로줄",
          "#2C8A3C", "#288136", "vertical",
          "rgba(255,255,255,0.82)", "rgba(255,255,255,0.45)",
@@ -202,7 +214,8 @@ SKINS: tuple[Skin, ...] = (
          sleeve="#A50044", trim="#EDBB00", pattern="stripes", pattern_color="#004D98",
          shorts="#004D98", socks="#004D98", sock_band="#A50044",
          chant="FORÇA CATALUNYA",
-         badge="CAT"),
+         badge="CAT",
+         chant_home="GRANA I BLAU"),
     Skin("madrid-red-stripes", "Madrid Red Stripes Edition", "마드리드 — 붉은·흰 세로줄",
          "#2E8B3E", "#2A8238", "vertical",
          "rgba(255,255,255,0.84)", "rgba(255,255,255,0.46)",
@@ -210,7 +223,8 @@ SKINS: tuple[Skin, ...] = (
          sleeve="#CB3524", trim="#FFFFFF", pattern="stripes", pattern_color="#FFFFFF",
          shorts="#1E2860", socks="#CB3524", sock_band="#FFFFFF",
          chant="¡AÚPA MADRID!",
-         badge="MAD"),
+         badge="MAD",
+         chant_home="ROJO Y BLANCO"),
 
     # ---- 이탈리아 ----------------------------------------------------
     Skin("turin-monochrome", "Turin Monochrome Edition", "토리노 — 흑백 세로줄",
@@ -220,7 +234,8 @@ SKINS: tuple[Skin, ...] = (
          sleeve="#1A1A1A", trim="#FFFFFF", pattern="stripes", pattern_color="#1A1A1A",
          shorts="#FFFFFF", socks="#FFFFFF", sock_band="#1A1A1A",
          chant="FORZA PIEMONTE",
-         badge="TOR"),
+         badge="TOR",
+         chant_home="BIANCO E NERO"),
     Skin("milan-red-black", "Milan Red & Black Edition", "밀라노 — 붉은색과 검정 세로줄",
          "#2C8A3C", "#287F36", "vertical",
          "rgba(255,255,255,0.82)", "rgba(255,255,255,0.45)",
@@ -228,7 +243,8 @@ SKINS: tuple[Skin, ...] = (
          sleeve="#111111", trim="#C0A062", pattern="stripes", pattern_color="#111111",
          shorts="#FFFFFF", socks="#FFFFFF", sock_band="#C8102E",
          chant="FORZA MILANO",
-         badge="MIL"),
+         badge="MIL",
+         chant_home="ROSSO E NERO"),
     Skin("milan-blue-black", "Milan Blue & Black Edition", "밀라노 — 감청·검정 세로줄",
          "#2A8438", "#267B33", "vertical",
          "rgba(255,255,255,0.84)", "rgba(255,255,255,0.46)",
@@ -236,7 +252,8 @@ SKINS: tuple[Skin, ...] = (
          sleeve="#111111", trim="#C9A227", pattern="stripes", pattern_color="#0B5FA5",
          shorts="#111111", socks="#111111", sock_band="#0B5FA5",
          chant="AVANTI MILANO",
-         badge="MIL"),
+         badge="MIL",
+         chant_home="NERO E AZZURRO"),
     Skin("naples-azure", "Naples Azure Edition", "나폴리 — 하늘색",
          "#309242", "#2C893C", "bands",
          "rgba(255,255,255,0.86)", "rgba(255,255,255,0.48)",
@@ -244,7 +261,8 @@ SKINS: tuple[Skin, ...] = (
          sleeve="#12A0D7", trim="#003D6B", pattern="plain",
          shorts="#12A0D7", socks="#12A0D7", sock_band="#FFFFFF",
          chant="FORZA NAPOLI",
-         badge="NAP"),
+         badge="NAP",
+         chant_home="CIELO DI NAPOLI"),
     Skin("rome-crimson", "Rome Crimson & Gold Edition", "로마 — 진홍과 금색",
          "#2B8739", "#277E34", "checks",
          "rgba(255,255,255,0.82)", "rgba(255,255,255,0.45)",
@@ -252,7 +270,8 @@ SKINS: tuple[Skin, ...] = (
          sleeve="#8E1F2F", trim="#F0BC42", pattern="plain",
          shorts="#FFFFFF", socks="#8E1F2F", sock_band="#F0BC42",
          chant="FORZA ROMA",
-         badge="ROM"),
+         badge="ROM",
+         chant_home="ROSSO E ORO"),
 
     # ---- 독일 --------------------------------------------------------
     Skin("bavaria-red", "Bavaria Red Edition", "바이에른 — 붉은색과 흰색",
@@ -262,7 +281,8 @@ SKINS: tuple[Skin, ...] = (
          sleeve="#DC052D", trim="#0066B2", pattern="plain",
          shorts="#DC052D", socks="#DC052D", sock_band="#FFFFFF",
          chant="AUF GEHT'S BAYERN",
-         badge="BAY"),
+         badge="BAY",
+         chant_home="ROT UND WEISS"),
     Skin("ruhr-yellow", "Ruhr Yellow Edition", "루르 — 노랑과 검정",
          "#2D8C3D", "#298337", "diagonal",
          "rgba(255,255,255,0.86)", "rgba(255,255,255,0.48)",
@@ -270,7 +290,8 @@ SKINS: tuple[Skin, ...] = (
          sleeve="#111111", trim="#FDE100", pattern="plain",
          shorts="#111111", socks="#FDE100", sock_band="#111111",
          chant="AUF GEHT'S RUHRPOTT",
-         badge="RUHR"),
+         badge="RUHR",
+         chant_home="GELB UND SCHWARZ"),
 
     # ---- 프랑스 · 네덜란드 · 스코틀랜드 --------------------------------
     Skin("paris-navy", "Paris Navy Edition", "파리 — 감청색에 붉은 중앙띠",
@@ -280,7 +301,8 @@ SKINS: tuple[Skin, ...] = (
          sleeve="#0B2B57", trim="#FFFFFF", pattern="center", pattern_color="#DA291C",
          shorts="#0B2B57", socks="#0B2B57", sock_band="#DA291C",
          chant="ALLEZ PARIS",
-         badge="PAR"),
+         badge="PAR",
+         chant_home="BLEU ET ROUGE"),
     Skin("amsterdam-red", "Amsterdam Red Edition", "암스테르담 — 흰색에 붉은 중앙띠",
          "#2F9040", "#2B873A", "bands",
          "rgba(255,255,255,0.86)", "rgba(255,255,255,0.48)",
@@ -288,7 +310,8 @@ SKINS: tuple[Skin, ...] = (
          sleeve="#FFFFFF", trim="#D2122E", pattern="center", pattern_color="#D2122E",
          shorts="#FFFFFF", socks="#D2122E", sock_band="#FFFFFF",
          chant="KOM OP AMSTERDAM",
-         badge="AMS"),
+         badge="AMS",
+         chant_home="ROOD EN WIT"),
     Skin("glasgow-hoops", "Glasgow Hoops Edition", "글래스고 — 초록·흰 가로줄",
          "#2C8A3C", "#288136", "bands",
          "rgba(255,255,255,0.86)", "rgba(255,255,255,0.48)",
@@ -296,7 +319,8 @@ SKINS: tuple[Skin, ...] = (
          sleeve="#018749", trim="#FFD700", pattern="hoops", pattern_color="#018749",
          shorts="#FFFFFF", socks="#FFFFFF", sock_band="#018749",
          chant="GLASGOW GREEN",
-         badge="GLA"),
+         badge="GLA",
+         chant_home="GREEN & WHITE"),
 )
 
 BY_ID: dict[str, Skin] = {s.id: s for s in SKINS}

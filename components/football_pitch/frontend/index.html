@@ -473,6 +473,11 @@ function patternSVG(kind, color) {
            '<rect x="0" y="46" width="100" height="13" fill="' + c + '"/>' +
            '<rect x="0" y="76" width="100" height="13" fill="' + c + '"/>';
   }
+  if (kind === "pinstripe") { // 아주 얇은 세로줄 여러 개 (흰 유니폼에 금색 등)
+    return [16, 30, 44, 58, 72, 86]
+      .map((x) => '<rect x="' + x + '" y="0" width="2.5" height="118" fill="' + c + '"/>')
+      .join("");
+  }
   if (kind === "center") {    // 가운데 세로 넓은 띠
     return '<rect x="38" y="0" width="24" height="118" fill="' + c + '"/>';
   }
@@ -790,6 +795,8 @@ function drawPattern(ctx, kind, color) {
     ctx.fillRect(8, 0, 13, 118); ctx.fillRect(43, 0, 13, 118); ctx.fillRect(78, 0, 13, 118);
   } else if (kind === "hoops") {
     ctx.fillRect(0, 16, 100, 13); ctx.fillRect(0, 46, 100, 13); ctx.fillRect(0, 76, 100, 13);
+  } else if (kind === "pinstripe") {
+    for (const x of [16, 30, 44, 58, 72, 86]) ctx.fillRect(x, 0, 2.5, 118);
   } else if (kind === "center") {
     ctx.fillRect(38, 0, 24, 118);
   } else if (kind === "sash") {
