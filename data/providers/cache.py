@@ -23,12 +23,27 @@ from typing import Any, Callable
 _STORE: dict[str, tuple[float, Any]] = {}
 
 
-def get_or_set(key: str, ttl_seconds: int, producer: Callable[[], Any]) -> Any:
-    """key 에 유효한 캐시가 있으면 반환, 없으면 producer() 를 실행해 저장 후 반환."""
+def get_or_set(key: str, ttl_seconds: int, producer: Callable[[], Any],
+               *, ttl_of: Callable[[Any], int] | None = None) -> Any:
+    """key 에 유효한 캐시가 있으면 반환, 없으면 producer() 를 실행해 저장 후 반환.
+
+    `ttl_of` — **이미 받아둔 값을 보고 유효기간을 다시 정하는** 콜백.
+
+    왜 필요한가: 지나간 달의 분배금은 **다시 안 바뀝니다.** 그런데 TTL 을 하나로
+    두면 몇 년 전 자료까지 하루마다 다시 받아옵니다(TIGER 는 달마다 따로 불러야
+    해서 한 종목에 HTTP 43번이 나갔습니다). 값을 보고 "이 달은 끝났다" 를
+    판단할 수 있으면, 끝난 달은 아주 길게 두고 **아직 채워지는 중인 달만**
+    자주 받으면 됩니다.
+
+    `ttl_of` 는 저장된 값을 받아 그 값에 맞는 유효기간(초)을 돌려줍니다.
+    안 주면 `ttl_seconds` 를 그대로 씁니다.
+    """
     now = time.time()
     hit = _STORE.get(key)
-    if hit is not None and (now - hit[0]) < ttl_seconds:
-        return hit[1]
+    if hit is not None:
+        ttl = ttl_seconds if ttl_of is None else ttl_of(hit[1])
+        if (now - hit[0]) < ttl:
+            return hit[1]
     value = producer()          # 예외가 나면 저장하지 않고 그대로 전파
     _STORE[key] = (now, value)
     return value

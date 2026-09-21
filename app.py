@@ -215,10 +215,15 @@ def render_home() -> None:
     if not this_month.rows:
         note("이번 달에는 예정된 분배금이 없습니다. (자료가 없는 종목은 여기에 안 나옵니다)")
     else:
+        if any(r.record_note for r in this_month.rows):
+            note("※ '기준' 날짜는 그날 갖고 있어야 받는다는 뜻입니다. "
+                 "월말이 기준인 ETF 는 돈이 다음 달 초에 들어와서, "
+                 "여기에는 들어온 달 기준으로 적혀 있습니다.")
         for r in this_month.rows:
             listrow(
                 f"{F.md(r.payment_date)}  {r.name}",
-                f"{r.holding.where()} · {F.shares(r.holding.shares)}",
+                f"{r.holding.where()} · {F.shares(r.holding.shares)}"
+                + (f" · {r.record_note}" if r.record_note else ""),
                 F.won(r.amount_krw),
                 f"세금 기준 {F.won(r.tax_basis_krw)}" if r.has_tax_basis
                 else f"세금 기준 {r.tax_basis_note}",
@@ -494,6 +499,10 @@ def render_payslip() -> None:
                     "받는 금액": F.won(r.amount_krw),
                     "세금 계산 기준": (F.won(r.tax_basis_krw) if r.has_tax_basis
                                   else r.tax_basis_note),
+                    # 월말이 기준인 ETF 는 돈이 다음 달 초에 들어옵니다.
+                    # 기준일을 같이 보여주지 않으면 "왜 이 달에 있지?" 가 됩니다.
+                    "지급기준일": (F.ymd(r.dist.record_date) if r.dist.record_date
+                              else config.NO_DATA_TEXT),
                     "": "🟡 예상" if r.is_estimated else "🟢 확인",
                 }
                 for r in total.rows
@@ -549,7 +558,9 @@ def render_calendar(year: int, month: int, total: CF.PeriodTotal) -> None:
             key=f"cal_{year}_{month}",
         )
         for r in by_day[picked].rows:
-            listrow(r.name, f"{r.holding.where()} · {F.shares(r.holding.shares)}",
+            listrow(r.name,
+                    f"{r.holding.where()} · {F.shares(r.holding.shares)}"
+                    + (f" · {r.record_note}" if r.record_note else ""),
                     F.won(r.amount_krw),
                     f"세금 기준 {F.won(r.tax_basis_krw)}" if r.has_tax_basis
                     else f"세금 기준 {r.tax_basis_note}",
@@ -672,6 +683,8 @@ def render_detail() -> None:
         [
             {
                 "지급월": f"{d.payment_date.year}.{d.payment_date.month:02d}",
+                "지급기준일": (F.ymd(d.record_date) if d.record_date
+                          else config.NO_DATA_TEXT),
                 "지급일": F.ymd(d.payment_date),
                 "주당 분배금": F.native_amt(d.distribution_per_share, g.currency),
                 "주당 과세표준액": (F.native_amt(d.tax_basis_per_share, g.currency)

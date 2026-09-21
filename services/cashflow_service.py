@@ -60,6 +60,28 @@ class PayslipRow:
         return self.dist.status == config.STATUS_ESTIMATED
 
     @property
+    def record_note(self) -> str:
+        """지급기준일이 **다른 달**이면 그 사실을 적을 짧은 문구. 아니면 빈 문자열.
+
+        왜 필요한가
+        -----------
+        월말이 기준인 ETF 가 많습니다. 기준일 8/31 -> 실지급 9/2 처럼요
+        (RISE 200위클리커버드콜은 31건이 **전부** 이렇습니다. TIGER·KODEX 의
+        미국S&P500 류도 마찬가지입니다).
+
+        이 앱은 **돈이 통장에 꽂히는 날**(실지급일)로 달을 묶습니다. 그게
+        "이번 달에 얼마 들어오나" 라는 질문에 맞는 답이라서요. 그런데 화면에
+        기준일이 안 보이면 **"8월분인데 왜 9월에 있지?"** 가 됩니다.
+        그래서 달이 갈리는 건에만 기준일을 같이 적습니다.
+        """
+        rd = self.dist.record_date
+        if rd is None:
+            return ""
+        if (rd.year, rd.month) == (self.payment_date.year, self.payment_date.month):
+            return ""
+        return f"{rd.month}/{rd.day} 기준"
+
+    @property
     def tax_basis_note(self) -> str:
         """과세표준을 모를 때 화면에 적을 **이유**. 알고 있으면 빈 문자열.
 

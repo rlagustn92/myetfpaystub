@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 # =====================================================================
 # 사용자에게 보이는 변화가 있으면 **아주 작은 수정이라도** 이 숫자를 올립니다.
 # 화면 헤더의 서비스 이름 옆에 그대로 표시됩니다.
-APP_VERSION: str = "0.12.0"
+APP_VERSION: str = "0.13.0"
 
 APP_NAME: str = "MY ETF 급여명세서"
 APP_TAGLINE: str = "여러 증권사에 흩어진 내 ETF와 매달 들어오는 돈을 한눈에"
@@ -62,6 +62,12 @@ CACHE_TTL_FX_SECONDS: int = 60 * 60                  # 환율: 1시간
 # 줄였습니다. 새로 발표된 값이 최대 하루 늦게 보이는 대신, 운용사 서버에
 # 부담을 덜 줍니다(관리자는 '🔄 정보 업데이트' 로 즉시 받아올 수 있습니다).
 CACHE_TTL_DISTRIBUTION_SECONDS: int = 60 * 60 * 24   # 분배금/과세표준: 24시간
+# **이미 끝난 달**의 분배금은 다시 안 바뀝니다. 그런 자료까지 하루마다 다시
+# 받을 이유가 없습니다. 특히 TIGER 는 달마다 따로 불러야 해서 한 종목에
+# HTTP 43번이 나갔습니다(자료는 4건인데). 끝난 달은 30일 동안 그대로 씁니다.
+# "끝났다" 의 뜻: 그 달이 이미 지났고 + 그 달 자료에 과세표준 빈 건이 없음.
+# (과세표준은 나중에 채워지는 일이 있어서, 빈 건이 남아 있으면 계속 확인합니다)
+CACHE_TTL_DISTRIBUTION_FINAL_SECONDS: int = 60 * 60 * 24 * 30   # 끝난 달: 30일
 CACHE_TTL_SEARCH_SECONDS: int = 60 * 60 * 24         # 종목 목록: 24시간
 CACHE_TTL_ISSUER_INDEX_SECONDS: int = 60 * 60 * 24   # 운용사 매핑: 24시간
 

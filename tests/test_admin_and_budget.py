@@ -157,3 +157,46 @@ def test_the_secrets_file_is_never_committed():
     tracked = subprocess.run(["git", "ls-files"], cwd=root,
                              capture_output=True, text=True).stdout
     assert "secrets.toml" not in tracked
+
+
+# ------------------------------------- 끝난 달은 다시 안 받는다
+def test_finished_months_are_kept_much_longer(monkeypatch):
+    """지나간 달의 분배금은 다시 안 바뀝니다. 그런데 TTL 이 하나뿐이면 몇 년
+    전 자료까지 하루마다 다시 받아옵니다 — TIGER 는 달마다 따로 불러야 해서
+    한 종목에 HTTP 43번이 나갔습니다(자료는 4건인데).
+
+    실측: 이 구분을 넣고 나서 하루 뒤 재조회가 43회 -> 1회가 됐습니다.
+    """
+    from datetime import date
+
+    from data.providers.issuer import tiger_provider as tp
+
+    monkeypatch.setattr(config, "today_local", lambda: date(2026, 9, 21))
+
+    done = {"069500": {"tax_basis": "168"}}          # 과세표준이 다 있는 달
+    pending = {"069500": {"tax_basis": ""}}          # 아직 안 채워진 건이 있는 달
+
+    # 지나갔고 + 값이 다 있으면 오래 둡니다
+    assert tp._month_ttl(2026, 8, done) == config.CACHE_TTL_DISTRIBUTION_FINAL_SECONDS
+    # 지나갔어도 빈 칸이 남아 있으면 계속 확인합니다 (나중에 채워지는 일이 있습니다)
+    assert tp._month_ttl(2026, 8, pending) == config.CACHE_TTL_DISTRIBUTION_SECONDS
+    # 이번 달은 지급이 더 붙을 수 있으니 절대 오래 두지 않습니다
+    assert tp._month_ttl(2026, 9, done) == config.CACHE_TTL_DISTRIBUTION_SECONDS
+    # 지급이 없었던 지난 달도 이제 안 바뀝니다
+    assert tp._month_ttl(2026, 7, {}) == config.CACHE_TTL_DISTRIBUTION_FINAL_SECONDS
+
+
+def test_cache_can_decide_the_ttl_from_the_stored_value():
+    """`ttl_of` 가 없으면 '끝난 달은 오래 두기' 를 만들 수 없습니다."""
+    from data.providers import cache
+
+    cache.invalidate()
+    calls = []
+    cache.get_or_set("k", 10, lambda: calls.append(1) or "값")
+    # 저장된 값을 보고 '이미 만료' 라고 답하면 다시 받아옵니다
+    cache.get_or_set("k", 10, lambda: calls.append(1) or "값", ttl_of=lambda v: 0)
+    assert len(calls) == 2
+    # 오래 두라고 답하면 안 받아옵니다
+    cache.get_or_set("k", 0, lambda: calls.append(1) or "값", ttl_of=lambda v: 9999)
+    assert len(calls) == 2
+    cache.invalidate()

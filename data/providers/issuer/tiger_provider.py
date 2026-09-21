@@ -77,6 +77,32 @@ MAX_PAGES = 30
 _TOTCNT_RE = re.compile(r'data-tot-cnt="(\d+)"')
 
 
+def _month_is_finished(year: int, month: int) -> bool:
+    """그 달이 이미 지났는가. 이번 달은 아직 지급 건이 더 붙을 수 있습니다."""
+    today = config.today_local()
+    return (year, month) < (today.year, today.month)
+
+
+def _month_ttl(year: int, month: int, rows: dict[str, dict]) -> int:
+    """이 달 자료를 얼마나 오래 그대로 쓸 것인가.
+
+    **끝난 달은 30일, 아직 채워지는 중이면 24시간.**
+
+    "끝났다" = 그 달이 지났고 + 받아온 자료에 과세표준 빈 칸이 없음.
+    과세표준은 운용사가 나중에 채우는 일이 있어서(실측: 2026-05·06 이 몇 달째
+    빈 칸), 빈 칸이 남아 있는 달은 계속 다시 확인합니다. 숫자를 지어내지 않는
+    대신, 채워지면 바로 보이게 하는 쪽을 택했습니다.
+    """
+    if not _month_is_finished(year, month):
+        return config.CACHE_TTL_DISTRIBUTION_SECONDS
+    if not rows:
+        # 빈 달(그 달에 지급이 없었음)도 지나갔으면 안 바뀝니다.
+        return config.CACHE_TTL_DISTRIBUTION_FINAL_SECONDS
+    if any(not str(r.get("tax_basis") or "").strip() for r in rows.values()):
+        return config.CACHE_TTL_DISTRIBUTION_SECONDS
+    return config.CACHE_TTL_DISTRIBUTION_FINAL_SECONDS
+
+
 def _fetch_month(year: int, month: int) -> dict[str, dict]:
     """그 달에 지급된 TIGER 전 종목. {종목코드: {...}}.
 
@@ -126,7 +152,9 @@ def _fetch_month(year: int, month: int) -> dict[str, dict]:
             page += 1
         return out
 
-    return cache.get_or_set(key, config.CACHE_TTL_DISTRIBUTION_SECONDS, _load)
+    # ⚠ 끝난 달은 30일, 아직 채워지는 중이면 24시간. 값을 보고 정합니다.
+    return cache.get_or_set(key, config.CACHE_TTL_DISTRIBUTION_SECONDS, _load,
+                            ttl_of=lambda rows: _month_ttl(year, month, rows))
 
 
 class TigerProvider(IssuerDistributionProvider):

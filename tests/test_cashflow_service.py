@@ -227,3 +227,46 @@ def test_the_two_reasons_are_different_words():
     assert config.TAX_BASIS_UNPUBLISHED != config.TAX_BASIS_UNSUPPORTED
     assert config.TAX_BASIS_UNPUBLISHED.strip()
     assert config.TAX_BASIS_UNSUPPORTED.strip()
+
+
+# --------------------------------------- 월말 기준 ETF (다음 달 초에 들어옴)
+def _row(record, pay):
+    h = Holding(ticker="475720", market="KR", name="RISE 200위클리커버드콜",
+                broker="증권사", account="일반", shares=100, avg_price=10000)
+    return CF.PayslipRow(
+        payment_date=pay, holding=h,
+        dist=Distribution(ticker="475720", payment_date=pay, record_date=record,
+                          distribution_per_share=50.0, tax_basis_per_share=10.0),
+        amount_krw=5000.0, tax_basis_krw=1000.0)
+
+
+def test_month_end_payers_show_their_record_date():
+    """월말이 기준인 ETF 가 많습니다. 기준일 8/31 -> 실지급 9/2 처럼요.
+    실측: RISE 200위클리커버드콜은 31건이 **전부** 이렇고, TIGER·KODEX 의
+    미국S&P500 류도 마찬가지입니다.
+
+    이 앱은 **돈이 꽂히는 날**로 달을 묶습니다("이번 달에 얼마 들어오나" 가
+    질문이라서요). 그런데 기준일이 화면에 안 보이면 "8월분인데 왜 9월에?"
+    가 됩니다. 그래서 달이 갈리는 건에만 기준일을 같이 적습니다.
+    """
+    r = _row(date(2026, 8, 31), date(2026, 9, 2))
+    assert r.record_note == "8/31 기준"
+
+
+def test_same_month_payers_say_nothing_extra():
+    """같은 달이면 군더더기입니다. 필요할 때만 적습니다."""
+    r = _row(date(2026, 9, 15), date(2026, 9, 17))
+    assert r.record_note == ""
+
+
+def test_no_record_date_means_no_note():
+    """미국 종목은 배당락일만 있어 기준일이 없을 수 있습니다."""
+    r = _row(None, date(2026, 9, 2))
+    assert r.record_note == ""
+
+
+def test_the_month_bucket_still_follows_the_payment_date():
+    """기준일을 보여주는 것이지, 달을 옮기는 게 아닙니다.
+    8/31 기준분은 돈이 9/2 에 들어오므로 **9월** 명세서에 있어야 합니다."""
+    r = _row(date(2026, 8, 31), date(2026, 9, 2))
+    assert r.payment_date.month == 9
