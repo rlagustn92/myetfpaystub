@@ -121,7 +121,9 @@ TIGER_HTML = """
 def test_tiger_reads_the_table_and_keeps_announced_zero(monkeypatch):
     monkeypatch.setattr("data.providers.issuer.tiger_provider.http_post",
                         lambda *a, **k: _Resp(text=TIGER_HTML))
-    table = TP._fetch_month(2026, 1)
+    # ⚠ `_fetch_month` 는 지나간 달을 시드 파일에서 읽습니다. 여기서 보려는 것은
+    #    **HTML 파싱과 페이징**이라 실제로 받아오는 쪽을 직접 부릅니다.
+    table = TP._fetch_month_live(2026, 1)
     assert set(table) == {"360750", "0177R0"}
     assert table["360750"]["amount"] == "65"
     assert table["0177R0"]["tax_basis"] == "0"       # 발표된 0원
@@ -148,7 +150,7 @@ def test_tiger_pages_until_it_has_everything(monkeypatch):
         return _Resp(text=body)
 
     monkeypatch.setattr("data.providers.issuer.tiger_provider.http_post", fake_post)
-    table = TP._fetch_month(2026, 2)
+    table = TP._fetch_month_live(2026, 2)
     assert calls["n"] >= 2
     assert "999999" in table
 

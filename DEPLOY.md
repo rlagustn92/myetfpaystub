@@ -108,6 +108,17 @@ ADMIN_KEY = "아무도-모르는-긴-문자열"
 
 ---
 
+### 시드 파일 갱신 (몇 달에 한 번)
+
+```bash
+python tools/build_issuer_index.py     # 종목코드 -> 운용사 내부 ID
+python tools/build_tiger_months.py     # TIGER 월별 분배 표
+```
+
+**개발자 PC 에서만** 돌리고 결과 CSV 를 커밋합니다. 배포본은 읽기만 합니다.
+`build_tiger_months.py` 는 덮어쓰지 않고 **없는 달만 더하므로** 돌릴수록
+이력이 길어지고 실행 비용은 줄어듭니다(`--dry-run` 으로 계획만 볼 수 있습니다).
+
 ## 4. 빠뜨리면 앱이 아예 안 켜지는 것들
 
 전부 지금 저장소에 들어 있는지 확인했습니다. 나중에 파일을 추가할 때 다시 보세요.
@@ -115,6 +126,7 @@ ADMIN_KEY = "아무도-모르는-긴-문자열"
 | 파일 | 빠뜨리면 |
 |---|---|
 | `data/issuer_index.csv` | ACE·RISE·SOL·PLUS·TIME 이 통째로 폴백으로 내려가 **과세표준이 전부 "데이터 없음"** 이 됩니다 |
+| `data/tiger_months.csv` | 앱은 돌지만 TIGER 종목 하나에 **HTTP 43회**가 나갑니다 (지나간 달을 매번 다시 받습니다). 서버가 잘 때마다 반복됩니다 |
 | `components/*/frontend/index.html` | 전술판·브라우저 저장이 빈 칸으로 뜹니다 |
 | `.streamlit/config.toml` | 밝은 테마 고정이 풀려서 **다크모드 기기에서 글자가 안 보입니다** |
 | `services/` · `data/providers/issuer/` 의 새 파일 | `ModuleNotFoundError` 로 앱이 안 켜집니다 |

@@ -37,6 +37,7 @@ from data.providers.issuer.base import (
     parse_amount,
     parse_date,
 )
+from data.providers.issuer import tiger_seed
 from models.distribution import Distribution, DistributionSeries
 
 API = "https://investments.miraeasset.com/tigeretf/ko/distribution/overall/list.ajax"
@@ -103,8 +104,18 @@ def _month_ttl(year: int, month: int, rows: dict[str, dict]) -> int:
     return config.CACHE_TTL_DISTRIBUTION_FINAL_SECONDS
 
 
-def _fetch_month(year: int, month: int) -> dict[str, dict]:
-    """그 달에 지급된 TIGER 전 종목. {종목코드: {...}}.
+def _month_is_settled(year: int, month: int, rows: dict[str, dict]) -> bool:
+    """이 달 자료가 **더 이상 안 바뀌는가.**
+
+    파일에서 읽을지 정하는 규칙과, 캐시를 오래 둘지 정하는 규칙은 **같아야**
+    합니다. 따로 두면 한쪽만 고쳤을 때 조용히 어긋나서, 아직 채워지는 중인
+    달을 영영 안 받아오게 됩니다. 그래서 `_month_ttl` 하나로 판단합니다.
+    """
+    return _month_ttl(year, month, rows) == config.CACHE_TTL_DISTRIBUTION_FINAL_SECONDS
+
+
+def _fetch_month_live(year: int, month: int) -> dict[str, dict]:
+    """그 달에 지급된 TIGER 전 종목을 **실제로 받아옵니다**. {종목코드: {...}}.
 
     ⚠ **`listCnt` 를 크게 보내도 서버는 한 번에 20건만 줍니다.** 화면의 "더보기" 가
     `pageIndex` 를 올려 가며 부르는 구조라서요. 이걸 모르고 listCnt=500 으로 한 번만
@@ -112,45 +123,59 @@ def _fetch_month(year: int, month: int) -> dict[str, dict]:
     됩니다.** 에러가 안 나서 더 위험합니다(실제로 TIGER 미국S&P500 이 빠졌습니다).
     전체 건수는 첫 행의 `data-tot-cnt` 에 들어 있으니 그걸 보고 페이징합니다.
     """
+    out: dict[str, dict] = {}
+    total: int | None = None
+    page = 1
+    while page <= MAX_PAGES:
+        r = http_post(API, referer=REFERER, data={
+            "pageIndex": page, "listCnt": PAGE_SIZE, "orderC": "", "orderType": "B",
+            "selectYear": str(year), "selectMonth": str(month),
+            "orderB": "ratioDESC", "q": "",
+        })
+        rows = _ROW_RE.findall(r.text)
+        if total is None:
+            m = _TOTCNT_RE.search(r.text)
+            total = int(m.group(1)) if m else 0
+        seen_in_page = 0
+        for tr in rows:
+            isin = _ISIN_RE.search(tr)
+            code = code_from_isin(isin.group(1)) if isin else None
+            if not code:
+                continue
+            cells = [_text(td) for td in _TD_RE.findall(tr)]
+            # cells[0] 은 종목명 칸(링크 전체)이라 제목만 따로 꺼냅니다.
+            if len(cells) < 7:
+                continue
+            seen_in_page += 1
+            title = _TITLE_RE.search(tr)
+            out[code] = {
+                "name": _html.unescape(title.group(1)).strip() if title else "",
+                "record_date": cells[2],
+                "payment_date": cells[3],
+                "amount": cells[4],
+                "tax_basis": cells[5],
+            }
+        if seen_in_page == 0 or len(out) >= (total or 0):
+            break
+        page += 1
+    return out
+
+
+def _fetch_month(year: int, month: int) -> dict[str, dict]:
+    """그 달 표. **저장소 파일에 있고 끝난 달이면 네트워크를 안 탑니다.**
+
+    캐시는 서버 메모리라 재시작하면 날아갑니다(무료 호스팅은 접속이 없으면
+    앱을 재웁니다). 그래서 깨어날 때마다 43번을 다시 쓰게 되는데, 지나간 달은
+    어차피 안 바뀌므로 `data/tiger_months.csv` 에서 읽습니다.
+    """
     key = f"kr:dist:tiger:{year}-{month:02d}"
 
     def _load() -> dict[str, dict]:
-        out: dict[str, dict] = {}
-        total: int | None = None
-        page = 1
-        while page <= MAX_PAGES:
-            r = http_post(API, referer=REFERER, data={
-                "pageIndex": page, "listCnt": PAGE_SIZE, "orderC": "", "orderType": "B",
-                "selectYear": str(year), "selectMonth": str(month),
-                "orderB": "ratioDESC", "q": "",
-            })
-            rows = _ROW_RE.findall(r.text)
-            if total is None:
-                m = _TOTCNT_RE.search(r.text)
-                total = int(m.group(1)) if m else 0
-            seen_in_page = 0
-            for tr in rows:
-                isin = _ISIN_RE.search(tr)
-                code = code_from_isin(isin.group(1)) if isin else None
-                if not code:
-                    continue
-                cells = [_text(td) for td in _TD_RE.findall(tr)]
-                # cells[0] 은 종목명 칸(링크 전체)이라 제목만 따로 꺼냅니다.
-                if len(cells) < 7:
-                    continue
-                seen_in_page += 1
-                title = _TITLE_RE.search(tr)
-                out[code] = {
-                    "name": _html.unescape(title.group(1)).strip() if title else "",
-                    "record_date": cells[2],
-                    "payment_date": cells[3],
-                    "amount": cells[4],
-                    "tax_basis": cells[5],
-                }
-            if seen_in_page == 0 or len(out) >= (total or 0):
-                break
-            page += 1
-        return out
+        seeded = tiger_seed.month_rows(year, month)
+        # ⚠ None(파일에 없음)과 {}(그 달엔 지급이 없었음)은 다른 뜻입니다.
+        if seeded is not None and _month_is_settled(year, month, seeded):
+            return seeded                      # HTTP 0회
+        return _fetch_month_live(year, month)
 
     # ⚠ 끝난 달은 30일, 아직 채워지는 중이면 24시간. 값을 보고 정합니다.
     return cache.get_or_set(key, config.CACHE_TTL_DISTRIBUTION_SECONDS, _load,
