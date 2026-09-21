@@ -153,6 +153,17 @@ def loads(text: str) -> tuple[Store | None, str]:
         return None, "JSON 형식이 아니어서 읽지 못했습니다. 저장했던 파일이 맞는지 확인해 주세요."
     if isinstance(d, dict) and d.get("schema") not in (None, SCHEMA):
         return None, f"이 앱에서 저장한 파일이 아닌 것 같습니다 (schema={d.get('schema')!r})."
+    # ⚠ **우리 파일처럼 생겼는지 먼저 봅니다.**
+    #    예전에는 `schema` 키가 아예 없으면 그냥 통과시켰습니다. 그래서 아무
+    #    JSON(`{"nope":1}`, `[]`, 다른 앱의 내보내기)이나 넣어도 "성공" 으로
+    #    받아들이고 **빈 포트폴리오**를 돌려줬습니다. 화면 맨 아래에서 그 빈
+    #    내용이 브라우저 저장소에 그대로 덮여 쓰이므로, 파일 하나 잘못 열면
+    #    **등록해 둔 ETF 가 전부 사라집니다.** 조용히요.
+    #    옛 저장본에는 `schema` 가 없을 수 있어 아는 키 하나만 있으면 받습니다.
+    known = ("schema", "profiles", "current", "holdings")
+    if not isinstance(d, dict) or not any(k in d for k in known):
+        return None, ("이 앱에서 저장한 파일이 아닙니다. "
+                      "등록해 둔 내용을 지우지 않으려고 불러오지 않았습니다.")
     try:
         return from_dict(d), ""
     except Exception:  # noqa: BLE001

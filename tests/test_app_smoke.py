@@ -183,16 +183,61 @@ def test_skin_picker_changes_the_pitch_and_is_saved(offline, fake_search):
     assert at.session_state["store"].active().skin == "london-red"
 
 
+def test_korean_won_has_no_decimal_point(offline, fake_search):
+    """1원 미만은 실제로 존재하지 않습니다. 원화 평단가에 소수점을 남기면
+    편집 표가 "32000.0000" 으로 보입니다(실제로 그랬습니다)."""
+    import app as A
+    assert A._format_money("32000", "KRW") == "32,000"
+    assert A._format_money("32000.75", "KRW") == "32,001"     # 반올림해서 정수로
+    assert A._format_money("30.50", "USD") == "30.5"          # 달러는 살립니다
+    assert A._format_money("1234.567", "USD") == "1,234.567"
+
+
+def test_a_typo_is_never_silently_saved_as_zero(offline, fake_search):
+    """⭐ 예전에는 "1.2.3" 같은 오타가 **아무 말 없이 평단가 0원**이 됐습니다.
+    그러면 원금이 0 이 되고 수익률이 터무니없이 나오는데 아무도 모릅니다.
+    숫자를 지어내지 않는다는 규칙(절대규칙 1)은 입력칸에도 적용됩니다."""
+    import app as A
+    for bad in ["1.2.3", "abc", ".", "3만5천"]:
+        assert A._parse_money(bad) is None, bad
+        # 못 읽었으면 화면의 글자를 **건드리지 않습니다** (고칠 수 있게)
+        assert A._format_money(bad, "KRW") == bad
+    assert A._parse_money("") == 0.0          # 빈 칸은 "아직 안 씀"
+
+
+def test_korean_money_units_are_understood(offline, fake_search):
+    """한국 사람은 만 단위로 셉니다. "3만" 을 3 으로 읽으면 평단가가
+    1/10,000 이 됩니다."""
+    import app as A
+    assert A._parse_money("3만") == 30000.0
+    assert A._parse_money("3만원") == 30000.0
+    assert A._parse_money("1억") == 100000000.0
+    assert A._parse_money("32,000원") == 32000.0
+    assert A._parse_money("₩32,000") == 32000.0
+    # 섞인 표현은 **맞히려 들지 않습니다.** 틀린 숫자보다 다시 묻는 게 낫습니다.
+    assert A._parse_money("3만5천") is None
+
+
+def test_what_we_read_and_what_we_show_are_the_same(offline, fake_search):
+    """⭐ 둘을 따로 만들면 어긋납니다 — "3만" 을 30,000 으로 읽어놓고 화면에는
+    "3" 이라고 찍었던 적이 있습니다."""
+    import app as A
+    for text in ["32000", "3만", "1억", "32,000원", "1234567"]:
+        shown = A._format_money(text, "KRW")
+        assert A._parse_money(shown) == A._parse_money(text), text
+
+
 def test_price_box_adds_thousand_separators(offline, fake_search):
     """평단가는 세 자리 콤마가 붙어야 합니다. `st.number_input` 은 콤마를 못
     찍어서(format 이 printf 라 자릿수 구분 기호가 없습니다) 글자 칸으로 받고
     직접 찍습니다."""
     import app as app_module
 
+    # 기본 통화는 원화라 소수점이 없습니다. 달러는 통화를 넘겨 줘야 합니다.
     assert app_module._format_money("32000") == "32,000"
     assert app_module._format_money("1234567") == "1,234,567"
-    assert app_module._format_money("30.5") == "30.5"        # 달러 평단가
-    assert app_module._format_money("1234.567") == "1,234.567"
+    assert app_module._format_money("30.5", "USD") == "30.5"        # 달러 평단가
+    assert app_module._format_money("1234.567", "USD") == "1,234.567"
     assert app_module._format_money("") == ""
     # 이미 콤마가 붙은 것을 다시 넣어도 망가지면 안 됩니다(엔터를 두 번 칩니다)
     assert app_module._format_money("32,000") == "32,000"
@@ -201,7 +246,7 @@ def test_price_box_adds_thousand_separators(offline, fake_search):
     assert app_module._parse_money("32,000") == 32000.0
     assert app_module._parse_money("₩ 1,234.5") == 1234.5
     assert app_module._parse_money("") == 0.0
-    assert app_module._parse_money("abc") == 0.0
+    assert app_module._parse_money("abc") is None      # 0 으로 삼키지 않습니다
 
 
 def test_amount_boxes_reset_when_a_different_stock_is_picked(offline, fake_search):

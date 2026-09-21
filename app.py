@@ -867,40 +867,63 @@ def _reset_amount_inputs() -> None:
     st.session_state["add_price_text"] = ""
 
 
-def _parse_money(text: str) -> float:
-    """사람이 친 금액 문자열 -> 숫자. 콤마·공백·통화기호를 무시합니다."""
-    cleaned = re.sub(r"[^0-9.]", "", str(text or ""))
-    if not cleaned or cleaned == ".":
-        return 0.0
-    try:
-        return float(cleaned)
-    except ValueError:
-        return 0.0
+def _parse_money(text: str) -> float | None:
+    """사람이 친 금액 -> 숫자. 콤마·공백·통화기호는 무시합니다.
 
-
-def _format_money(text: str) -> str:
-    """사람이 친 그대로를 세 자리 콤마가 붙은 모양으로. 소수점은 친 대로 남깁니다.
-
-    "32000"    -> "32,000"
-    "30.5"     -> "30.5"        (달러 평단가)
-    "1234.567" -> "1,234.567"
+    ⚠ **못 읽으면 0 이 아니라 `None` 을 돌려줍니다.** 예전에는 0.0 이었는데,
+      "1.2.3" 같은 오타를 치면 **아무 말 없이 평단가 0원으로 저장**됐습니다.
+      그러면 원금이 0 이 되고 수익률이 터무니없이 나옵니다. 숫자를 지어내지
+      않는다는 규칙(절대규칙 1)은 입력칸에도 똑같이 적용됩니다.
+      빈 칸은 "아직 안 씀" 이라 0.0 입니다.
     """
-    cleaned = re.sub(r"[^0-9.]", "", str(text or ""))
-    if not cleaned:
+    raw = str(text or "").strip()
+    if not raw:
+        return 0.0
+    # 통화기호·쉼표·"원"·공백만 걷어냅니다. **단위(만·억)는 남겨둡니다.**
+    body = re.sub(r"[,\s₩￦$원]", "", raw)
+    # 한국 사람은 만 단위로 셉니다 — "3만" 을 3 으로 읽으면 평단가가 1/10000 이
+    # 됩니다. 단위가 섞인 복잡한 표현("3만5천")은 **맞히려 들지 않고** 못 읽은
+    # 것으로 둡니다. 틀린 숫자를 저장하는 것보다 다시 물어보는 편이 낫습니다.
+    # `\d*` 라 "30." 처럼 치다 만 상태도 받습니다(치는 도중에 경고가 뜨면 거슬립니다).
+    m = re.fullmatch(r"(\d+(?:\.\d*)?)(억|만)?", body)
+    if not m:
+        return None
+    value = float(m.group(1))
+    unit = {"억": 100_000_000, "만": 10_000}.get(m.group(2) or "", 1)
+    return value * unit
+
+
+def _format_money(text: str, currency: str = "KRW") -> str:
+    """친 그대로를 세 자리 콤마가 붙은 모양으로.
+
+        원화   "32000"    -> "32,000"      소수점을 **버립니다**
+               "32000.75" -> "32,000"      1원 미만은 실제로 존재하지 않습니다
+        달러   "30.5"     -> "30.5"        소수점을 살립니다
+               "1234.567" -> "1,234.567"
+
+    ⚠ 못 읽는 글자가 섞여 있으면 **원래 글을 그대로 돌려줍니다.** 예전에는
+      숫자만 남겨서, 오타를 친 순간 화면에서 글자가 사라졌습니다.
+    """
+    raw = str(text or "").strip()
+    if not raw:
         return ""
-    whole, dot, frac = cleaned.partition(".")
-    whole = whole.lstrip("0") or "0"
-    try:
-        grouped = f"{int(whole):,}"
-    except ValueError:
-        return cleaned
-    return grouped + (("." + frac) if dot else "")
+    # ⚠ **반드시 `_parse_money` 의 결과로 만듭니다.** 따로 글자를 다듬으면
+    #   둘이 어긋납니다 — "3만" 을 30,000 으로 읽어놓고 화면에는 "3" 이라고
+    #   찍었던 적이 있습니다. 읽은 값과 보여주는 값은 같아야 합니다.
+    value = _parse_money(raw)
+    if value is None:
+        return raw                          # 손대지 않습니다 — 사용자가 고치게
+    if currency != "USD":
+        return f"{round(value):,}"          # 원화는 1원 미만이 실제로 없습니다
+    # 달러는 소수점을 살리되 꼬리의 0 은 떼어 냅니다 (30.50 -> 30.5)
+    return f"{value:,.4f}".rstrip("0").rstrip(".")
 
 
 def _on_price_changed() -> None:
     """평단가 칸을 벗어나거나 엔터를 치면 콤마를 붙여 다시 씁니다."""
     st.session_state["add_price_text"] = _format_money(
-        st.session_state.get("add_price_text", ""))
+        st.session_state.get("add_price_text", ""),
+        st.session_state.get("add_price_currency", "KRW"))
 
 
 def render_paste_import() -> None:
@@ -1049,21 +1072,32 @@ def render_manage() -> None:
         qty = st.number_input("몇 주 가지고 있나요?", min_value=0.0, step=1.0,
                               key="add_qty")
     with c4:
-        unit = "$" if (hit and hit.market == MARKET_US) else "₩"
+        is_usd = bool(hit and hit.market == MARKET_US)
+        unit = "$" if is_usd else "₩"
+        # 콤마를 찍을 때 통화를 알아야 합니다(원화는 소수점을 버립니다).
+        # on_change 콜백은 인자를 못 받으므로 session_state 로 넘깁니다.
+        st.session_state["add_price_currency"] = "USD" if is_usd else "KRW"
         # ⚠ st.number_input 은 세 자리 콤마를 못 찍습니다(format 이 printf 라
         #    자릿수 구분 기호가 없습니다). 그래서 글자 칸으로 받고 직접 찍습니다.
         st.text_input(f"평균적으로 얼마에 샀나요? ({unit})",
-                      key="add_price_text", placeholder="32,000",
+                      key="add_price_text",
+                      placeholder="30.50" if is_usd else "32,000",
                       on_change=_on_price_changed)
         price = _parse_money(st.session_state.get("add_price_text", ""))
-        if price > 0:
-            note(f"{unit}{_format_money(str(price))} 로 저장됩니다.")
+        if price is None:
+            warn("평균 매입가를 숫자로 읽지 못했습니다. 숫자만 넣어 주세요.")
+        elif price > 0:
+            note(f"{unit}{_format_money(str(price), 'USD' if is_usd else 'KRW')} "
+                 f"로 저장됩니다.")
 
-    if st.button("저장", type="primary", disabled=(hit is None or qty <= 0)):
+    # ⚠ 평단가를 못 읽었으면 저장을 막습니다. 0 으로 넘기면 원금이 0 이 되고
+    #    수익률이 터무니없이 나옵니다(그리고 아무도 모릅니다).
+    if st.button("저장", type="primary",
+                 disabled=(hit is None or qty <= 0 or price is None)):
         portfolio.add(Holding(
             ticker=hit.ticker, market=hit.market, name=hit.name,
             broker=broker or "", account=account or "", account_type=account or "",
-            shares=float(qty), avg_price=float(price),
+            shares=float(qty), avg_price=float(price or 0),
         ))
         if broker and broker not in portfolio.brokers \
                 and broker not in config.DEFAULT_BROKERS:
@@ -1111,7 +1145,10 @@ def render_manage() -> None:
             "ETF": st.column_config.TextColumn(disabled=True),
             "종목코드": st.column_config.TextColumn(disabled=True, width="small"),
             "수량": st.column_config.NumberColumn(min_value=0.0, step=1.0),
-            "평균 매입가격": st.column_config.NumberColumn(min_value=0.0, format="%.4f"),
+            # ⚠ `%.4f` 로 두면 원화가 "32000.0000" 으로 보입니다. 1원 미만은
+            #    실제로 없습니다. 형식을 안 주면 32,000 과 30.5 가 둘 다
+            #    자연스럽게 나옵니다(한 열에 원화·달러가 섞여 있어서요).
+            "평균 매입가격": st.column_config.NumberColumn(min_value=0.0),
             "_id": None,
         },
     )
