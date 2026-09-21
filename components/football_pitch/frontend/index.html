@@ -3,7 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <style>
-  :root { --line: rgba(255,255,255,0.78); --slot: rgba(255,255,255,0.30); }
+  /* 스킨(components/skins.py)이 갈아끼우는 값들. 여기 없는 색은 스킨이 못 바꿉니다. */
+  :root {
+    --line: rgba(255,255,255,0.78); --slot: rgba(255,255,255,0.30);
+    --turf-a: #2f8f3f; --turf-b: #2b8639;
+    --frame-a: #1f6f3a; --frame-b: #1f6f3a;
+    --accent: #ffcf33;
+  }
   * { box-sizing: border-box; }
   /* overflow:hidden -- 이 iframe 은 내용 높이에 딱 맞춰 잡히므로 스스로 스크롤될 일이
      없습니다. 1px 이라도 넘쳐 스크롤 가능해지면, 전술판 위에서 휠을 돌릴 때 휠 이벤트를
@@ -30,11 +36,19 @@
   .tbtn:hover { background: rgba(0,0,0,0.09); }
   .tbtn:active { background: rgba(0,0,0,0.14); }
   .tbtn:disabled { opacity: .6; cursor: default; }
+  /* 판을 두르는 광고보드. 두 색을 번갈아 깝니다(같은 색이면 단색으로 보입니다).
+     #pitch 안의 좌표(%)를 건드리지 않으려고 바깥에 껍데기를 하나 둡니다. */
+  #frame {
+    padding: 7px; border-radius: 15px;
+    background-image: repeating-linear-gradient(90deg,
+      var(--frame-a) 0 16px, var(--frame-b) 16px 32px);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+  }
   #pitch {
     position: relative; width: 100%; margin: 0 auto; border-radius: 12px; overflow: hidden;
     /* 잔디 줄무늬: 화면 전체 크기의 큰 그라디언트 하나를 매번 다시 그리는 대신,
        작은 타일 하나를 반복해서 깝니다 (스크롤 중 다시 칠하는 비용이 줄어듭니다). */
-    background-image: linear-gradient(0deg, #2f8f3f 50%, #2b8639 50%);
+    background-image: linear-gradient(0deg, var(--turf-a) 50%, var(--turf-b) 50%);
     background-size: 100% 14.4%;
     box-shadow: inset 0 0 0 2px rgba(0,0,0,0.15);
     aspect-ratio: 72 / 96;
@@ -51,7 +65,8 @@
     font-size: 10.5px; color: rgba(255,255,255,0.62); font-weight: 700;
     pointer-events: none;
   }
-  .slot.hot { border-color: #ffcf33; border-style: solid; background: rgba(255,207,51,0.16); color: #fff; }
+  .slot.hot { border-color: var(--accent); border-style: solid;
+              background: rgba(255,255,255,0.18); color: #fff; }
 
   /* ---- 종목 카드 = 축구 유니폼 + 이름표 --------------------------------------
      유니폼 색  = 운용사 브랜드 (pitch_kit.py 가 정해서 내려줍니다)
@@ -71,7 +86,7 @@
   .card.dragging { cursor: grabbing; z-index: 60; transition: none; }
   .card .shirt { width: 62%; margin: 0 auto; display: block;
     filter: drop-shadow(0 2px 3px rgba(0,0,0,0.35)); }
-  .card.selected .shirt { filter: drop-shadow(0 0 0 #ffcf33) drop-shadow(0 0 3px #ffcf33); }
+  .card.selected .shirt { filter: drop-shadow(0 0 0 var(--accent)) drop-shadow(0 0 3px var(--accent)); }
   .card .tag {
     margin-top: 2px; border-radius: 4px; padding: 1px 3px;
     /* 글자 크기는 전술판 폭에 맞춰 JS(tagFontPx)가 --tagfs 로 넣어 줍니다.
@@ -80,7 +95,7 @@
     font-size: var(--tagfs, 10px); font-weight: 700; line-height: 1.34;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .card.selected .tag { box-shadow: 0 0 0 2px #ffcf33; }
+  .card.selected .tag { box-shadow: 0 0 0 2px var(--accent); }
   .card .warn { position: absolute; top: -2px; right: 2px; width: 8px; height: 8px;
     border-radius: 50%; background: #e23b3b; border: 1px solid #fff; }
 
@@ -143,6 +158,7 @@
         title="PNG 파일로 내려받기 (브라우저 다운로드 폴더에 저장됩니다)">💾 저장</button>
     </span>
   </div>
+  <div id="frame">
   <div id="pitch">
     <svg id="svg" viewBox="0 0 1000 1400" preserveAspectRatio="none">
       <!-- 우리 진영(아래 절반) 살짝 밝게 -->
@@ -161,13 +177,14 @@
       <!-- 아래(우리) 골문 : 더 두껍게 -->
       <rect x="250" y="1140" width="500" height="250" fill="none" stroke="var(--line)" stroke-width="3"/>
       <rect x="390" y="1290" width="220" height="100" fill="none" stroke="var(--line)" stroke-width="3"/>
-      <rect x="443" y="1386" width="114" height="12" fill="#ffffff" stroke="#1f6f3a" stroke-width="3"/>
+      <rect x="443" y="1386" width="114" height="12" fill="#ffffff" stroke="var(--frame-a)" stroke-width="3"/>
       <path d="M360 1140 A 170 170 0 0 1 640 1140" fill="none" stroke="var(--line)" stroke-width="3"/>
     </svg>
     <div id="empty">
       <span class="big">ETF 를 등록하면 여기에 선수로 섭니다</span>
       <span class="sub">왼쪽에서 검색하거나, 위의 예시를 한 번 눌러보세요</span>
     </div>
+  </div>
   </div>
   <div id="botbar">🏠 우리 진영 · 골키퍼 ▼</div>
   <div id="hint"></div>
@@ -193,6 +210,7 @@ let summary = null;   // {cells:[{k,v}], note, key_note}
 let legend = [];      // [{name, amount, color, us}]
 let footer = "";
 let captureFilename = "";   // 💾 저장 시 파일 이름 (파이썬이 전술명·날짜로 만들어 내려줌)
+let skin = null;            // 경기장 테마 (components/skins.py)
 let commentText = "";       // 📋 텍스트 버튼이 복사할 글자 (app.comment_text)
 let selectedId = null;
 let nonce = 0;
@@ -673,6 +691,15 @@ async function buildPitchCanvas() {
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d");
 
+  // 화면에서 실제로 계산된 스킨 색을 읽어옵니다. 여기서 색을 새로 정하면
+  // 화면과 이미지가 어긋납니다 (같은 전술판인데 색이 다른 그림이 나갑니다).
+  const cssVar = (name, fallback) =>
+    (getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback);
+  const turfA = cssVar("--turf-a", "#2f8f3f");
+  const turfB = cssVar("--turf-b", "#2b8639");
+  const frameA = cssVar("--frame-a", "#1f6f3a");
+  const frameB = cssVar("--frame-b", "#1f6f3a");
+
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
 
@@ -684,11 +711,23 @@ async function buildPitchCanvas() {
   ctx.fillStyle = "#1f6f3a";
   ctx.fillText("🏠 우리 진영 · 골키퍼 ▼", W / 2, barPx + pitchH + barPx / 2);
 
+  // 광고보드 — 화면의 #frame 과 같은 두 색 줄무늬.
+  // ⚠ 캔버스에서는 잔디가 가로 폭을 꽉 채우므로 좌우 테두리를 그리면 곧바로
+  //    덮입니다(잔디를 뒤에 그립니다). 그래서 위아래 띠만 그립니다.
+  const framePx = Math.max(4, Math.round(7 * scale));
+  const bandW = framePx * 2;
+  for (let x = 0, k = 0; x < W; x += bandW, k++) {
+    ctx.fillStyle = (k % 2 === 0) ? frameA : frameB;
+    const w = Math.min(bandW, W - x);
+    ctx.fillRect(x, barPx - framePx, w, framePx);              // 위
+    ctx.fillRect(x, barPx + pitchH, w, framePx);               // 아래
+  }
+
   // 잔디 스트라이프
   const stripeH = pitchH * 0.072;
   let i = 0;
   for (let y = barPx; y < barPx + pitchH; y += stripeH, i++) {
-    ctx.fillStyle = (i % 2 === 0) ? "#2f8f3f" : "#2b8639";
+    ctx.fillStyle = (i % 2 === 0) ? turfA : turfB;
     ctx.fillRect(0, y, W, Math.min(stripeH, barPx + pitchH - y));
   }
 
@@ -957,6 +996,25 @@ document.getElementById("saveBtn").addEventListener("click", (e) => {
   captureAndSave();
 });
 
+/** 스킨을 CSS 변수에 꽂습니다.
+ *
+ *  색을 코드 곳곳에 뿌리지 않고 변수 한 벌만 갈아끼우는 이유는, 📸 캡처 이미지가
+ *  **화면에서 계산된 값을 그대로 읽어다 그리기** 때문입니다. 한 곳만 바꾸면
+ *  화면과 이미지가 저절로 같아집니다. 따로 칠하면 둘이 어긋납니다.
+ */
+function applySkin(sk) {
+  if (!sk) return;
+  const root = document.documentElement.style;
+  const set = (k, v) => { if (v) root.setProperty(k, v); };
+  set("--turf-a", sk.turfA);
+  set("--turf-b", sk.turfB);
+  set("--line", sk.line);
+  set("--slot", sk.slot);
+  set("--frame-a", sk.frameA);
+  set("--frame-b", sk.frameB);
+  set("--accent", sk.accent);
+}
+
 Streamlit.onRender((args) => {
   slots = Array.isArray(args.slots) ? args.slots.map(s => ({
     id: String(s.id), row: s.row, col: s.col,
@@ -984,6 +1042,8 @@ Streamlit.onRender((args) => {
   footer = args.footer || "";
   captureFilename = args.capture_filename || "";
   commentText = args.comment_text || "";
+  skin = args.skin || skin;
+  applySkin(skin);
   document.getElementById("textBtn").style.display = commentText ? "" : "none";
 
   // 레이아웃 실험용: 전술판 세로 길이(세로/가로 비율)와 컴팩트 폰트 모드

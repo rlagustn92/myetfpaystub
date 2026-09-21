@@ -133,6 +133,24 @@ streamlit run app.py
 - 처음 자리는 앱이 잡아 줍니다(채권은 수비, 배당·커버드콜은 중원, 레버리지는 최전방).
   **평가나 추천이 아니라 보기 좋으라고 잡아주는 초기 배치**일 뿐입니다
 
+### 경기장 스킨 21벌
+
+전술판 위 **경기장 스킨**에서 잔디·라인·광고보드 색을 바꿀 수 있습니다.
+세계적으로 유명한 축구팀 느낌으로 20벌 + 기본 잔디 1벌.
+
+> London Red · London Blue · Thames White · Manchester Red · Manchester Sky ·
+> Merseyside Red · Tyneside Stripes · Madrid White · Catalonia Claret ·
+> Madrid Red Stripes · Turin Monochrome · Milan Red & Black · Milan Blue & Black ·
+> Naples Azure · Rome Crimson & Gold · Bavaria Red · Ruhr Yellow · Paris Navy ·
+> Amsterdam Red · Glasgow Hoops
+
+색 조합과 지명으로만 만든 테마입니다. **실제 구단명·별칭·엠블럼은 쓰지 않았습니다.**
+
+⚠ 스킨은 **경기장만** 바꿉니다. 유니폼 색은 운용사(KODEX 남색, TIGER 주황 …)를,
+흰 유니폼은 미국 종목을 뜻하는 **정보**라서 그대로 둡니다.
+
+고른 스킨은 저장 파일에 같이 남아서 새로고침해도 유지됩니다.
+
 전술판 위 버튼 세 개로 그대로 자랑할 수 있습니다.
 
 | 버튼 | 하는 일 |

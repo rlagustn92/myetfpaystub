@@ -165,3 +165,16 @@ def test_pitch_slots_are_saved_with_the_portfolio(offline, fake_search):
     slots = saved["profiles"][store.current]["slots"]
     assert len(slots) == 4                     # 예시 4종목 전부 자리를 받음
     assert len(set(slots.values())) == 4       # 겹치지 않음
+
+
+def test_skin_picker_changes_the_pitch_and_is_saved(offline, fake_search):
+    """스킨을 골랐는데 새로고침하면 기본 잔디로 돌아가면 쓸모가 없습니다."""
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    [b for b in at.button if "예시" in b.label][0].click().run()
+    assert not at.exception
+
+    box = [s for s in at.selectbox if "스킨" in s.label][0]
+    target = [o for o in box.options if "London Red" in o][0]
+    box.set_value(target).run()
+    assert not at.exception
+    assert at.session_state["store"].active().skin == "london-red"

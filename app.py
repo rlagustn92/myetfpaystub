@@ -36,6 +36,7 @@ from components.ui import (
     note,
     paycard,
     section,
+    skin_gallery,
     warn,
 )
 from data.providers import cache
@@ -49,6 +50,7 @@ from services import (
     portfolio_service as PS,
     search_service,
     share_service,
+    skin_service,
     storage_service as STORE,
     visitor_service,
 )
@@ -280,6 +282,8 @@ def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None
             "흰 유니폼 = 미국 종목 · C = 지금 가장 많이 들고 있는 종목. "
             "카드를 끌어다 자리를 바꿀 수 있습니다.")
 
+    render_skin_picker()
+
     groups = PS.group_by_ticker(summary)
     pitch_service.prune_slots(portfolio)          # 판 종목의 자리를 비웁니다
     pitch_service.ensure_slots(portfolio, groups)  # 새 종목에 자리를 줍니다
@@ -326,6 +330,7 @@ def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None
             footer=f"{config.APP_ICON} {config.APP_NAME} v{config.APP_VERSION}",
             capture_filename=f"내_ETF_전술판_{today:%Y%m%d}.png",
             comment_text=comment,
+            skin=skin_service.current(portfolio).to_dict(),
             key="pitch",
         )
 
@@ -339,6 +344,39 @@ def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None
         warn(f"전술판 자리는 {len(pitch_grid.all_slots())}개뿐이라 "
              f"{', '.join(payload.no_slot)} 은(는) 판에 세우지 못했습니다. "
              f"위 '내 ETF' 목록에는 그대로 다 있습니다.")
+
+
+def render_skin_picker() -> None:
+    """경기장 스킨 고르기.
+
+    스킨은 **경기장만** 바꿉니다. 유니폼 색은 운용사 브랜드를 나타내는 정보라
+    스킨이 물들이지 않습니다(물들이면 어느 운용사 상품인지 못 알아봅니다).
+    """
+    options = skin_service.available(portfolio)
+    # 이름만으로 고릅니다. "London Red Edition — 런던 레드 — 붉은색과 흰색" 처럼
+    # 줄표가 두 번 들어가면 읽기 나빠져서, 설명은 아래 한 줄로 따로 답니다.
+    labels = {sk.name: sk for sk in options}
+    now = skin_service.current(portfolio)
+    current_label = next((k for k, v in labels.items() if v.id == now.id),
+                         list(labels)[0])
+
+    c1, c2 = st.columns([2, 3])
+    with c1:
+        picked = st.selectbox("경기장 스킨", list(labels.keys()),
+                              index=list(labels).index(current_label), key="skin_pick")
+        if skin_service.select(portfolio, labels[picked].id):
+            st.rerun()
+    with c2:
+        st.write("")
+        # ⚠ note() 는 글자를 그대로 이스케이프합니다(마크다운이 아닙니다).
+        #    여기에 ** 를 쓰면 별표가 그대로 찍힙니다.
+        note(f"{labels[picked].korean}")
+        note("스킨은 경기장(잔디·라인·광고보드)만 바꿉니다. "
+             "유니폼 색은 운용사를 나타내는 정보라 그대로 둡니다.")
+
+    with st.expander(f"스킨 전체 보기 ({len(options)}개)"):
+        skin_gallery(options, now.id)
+        note("색 조합과 지명으로만 만든 테마입니다. 실제 구단명·별칭·엠블럼은 쓰지 않았습니다.")
 
 
 # =====================================================================

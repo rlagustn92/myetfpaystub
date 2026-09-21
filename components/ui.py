@@ -92,6 +92,20 @@ CSS = """
                 background:#F3F7FF; }
   a.chip.link:hover { background:#E6EFFF; }
 
+  /* 스킨 미리보기 — 경기장 한 벌을 작은 띠 하나로 보여줍니다 */
+  .skins { display:grid; grid-template-columns:repeat(auto-fill,minmax(148px,1fr)); gap:8px; }
+  .skinbox { border:1px solid var(--line); border-radius:10px; overflow:hidden;
+             background:var(--card); }
+  .skinbox.on { border-color:var(--brand); box-shadow:0 0 0 2px #DCE7FF; }
+  .skinbox .band { height:10px; }
+  .skinbox .turf { height:26px; position:relative; }
+  .skinbox .turf i { position:absolute; left:50%; top:50%; width:34%; height:56%;
+                     transform:translate(-50%,-50%); border:1.5px solid rgba(255,255,255,.8);
+                     border-radius:3px; }
+  .skinbox .nm { font-size:.72rem; font-weight:700; color:var(--ink);
+                 padding:6px 8px 2px; line-height:1.25; }
+  .skinbox .kr { font-size:.68rem; color:var(--ink-faint); padding:0 8px 7px; }
+
   .note { font-size:.8rem; color:var(--ink-faint); }
   .warn { background:var(--warn-bg); border:1px solid var(--warn-line); border-radius:12px;
           padding:10px 14px; font-size:.85rem; color:#7A5B00; }
@@ -189,6 +203,27 @@ def listrow(name: str, subtitle: str, amount: str, amount_sub: str = "",
         f"<div class='rt'><div class='amt'>{_esc(amount)}</div>{sub_html}</div></div>",
         unsafe_allow_html=True,
     )
+
+
+def skin_gallery(skins: list, current_id: str) -> None:
+    """스킨 전체를 작은 띠로 늘어놓습니다. 보여주기 전용 — 고르는 건 셀렉트박스가 합니다.
+
+    Streamlit 에서 21개를 전부 버튼으로 만들면 클릭 한 번마다 화면을 통째로 다시
+    그려서 무겁습니다. 그래서 "눈으로 고르고, 셀렉트박스로 선택" 으로 나눴습니다.
+    """
+    cells = []
+    for sk in skins:
+        on = " on" if sk.id == current_id else ""
+        cells.append(
+            f"<div class='skinbox{on}'>"
+            f"<div class='band' style='background:repeating-linear-gradient(90deg,"
+            f"{_esc(sk.frame_a)} 0 8px,{_esc(sk.frame_b)} 8px 16px)'></div>"
+            f"<div class='turf' style='background:repeating-linear-gradient(0deg,"
+            f"{_esc(sk.turf_a)} 0 6px,{_esc(sk.turf_b)} 6px 12px)'><i></i></div>"
+            f"<div class='nm'>{_esc(sk.name)}</div>"
+            f"<div class='kr'>{_esc(sk.korean)}</div></div>"
+        )
+    st.markdown(f"<div class='skins'>{''.join(cells)}</div>", unsafe_allow_html=True)
 
 
 def note(text: str) -> None:

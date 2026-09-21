@@ -134,6 +134,8 @@ class Portfolio:
     account_types: list[str] = field(default_factory=list)  # 사용자가 추가한 계좌 유형
     # 전술판 배치 { "KR:069500": "DF-C", ... }. 사용자가 끌어다 놓은 자리입니다.
     slots: dict[str, str] = field(default_factory=dict)
+    # 고른 경기장 스킨 id (components/skins.py). 빈 값이면 기본 잔디.
+    skin: str = ""
 
     # -- 조회 --------------------------------------------------------
     def by_id(self, holding_id: str) -> Holding | None:
@@ -175,6 +177,7 @@ class Portfolio:
             "brokers": list(self.brokers),
             "account_types": list(self.account_types),
             "slots": dict(self.slots),
+            "skin": self.skin,
         }
 
     @staticmethod
@@ -202,4 +205,5 @@ class Portfolio:
             brokers=[str(x) for x in (d.get("brokers") or []) if str(x).strip()],
             account_types=[str(x) for x in (d.get("account_types") or []) if str(x).strip()],
             slots=slots,
+            skin=str(d.get("skin") or ""),
         )

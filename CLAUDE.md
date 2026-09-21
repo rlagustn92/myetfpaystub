@@ -103,6 +103,17 @@ streamlit run app.py         # 로컬 실행
   입력한 목표비중이었습니다. 여기서는 수량 × 현재가로 저절로 정해집니다.
 - **`pitch_service._ROW_BY_KEYWORD` 는 순서가 중요합니다.** "커버드콜" 이 "200"
   보다 앞에 있어야 "KODEX 200타겟위클리커버드콜" 이 제 라인으로 갑니다.
+- **스킨은 경기장만 바꿉니다. 유니폼은 절대 건드리지 마세요.** 유니폼 색은
+  운용사 브랜드(= 정보)이고 흰 유니폼은 미국 종목이라는 뜻입니다. 스킨이
+  물들이면 그 정보가 사라집니다.
+- **스킨 색은 CSS 변수 한 벌로만 넘깁니다.** 📸 캡처 이미지가 화면에서 계산된
+  값을 그대로 읽어 그리기 때문에, 한 곳만 바꾸면 화면과 이미지가 저절로 같아집니다.
+  따로 칠하면 둘이 어긋납니다.
+- **`components/ui.py` 의 `note()` 는 마크다운이 아닙니다.** `**굵게**` 를 넣으면
+  별표가 그대로 찍힙니다(실제로 당했습니다).
+- **스킨은 지금 전부 열려 있습니다.** `tier` 필드는 있지만 `is_unlocked()` 가 항상
+  True 입니다. 아직 없는 잠금을 "곧 열립니다" 로 보여주지 않습니다.
+  수익화 배경은 docs/호스팅-수익화-검토.md.
 - **날짜는 전부 `config.today_local()`** 을 씁니다. 서버가 UTC 라 `date.today()` 를 쓰면
   한국 시간 오전 9시에 날짜가 바뀝니다.
 
@@ -128,6 +139,7 @@ services/                  순수 계산 (테스트는 주로 여기)
   storage_service.py       저장/불러오기 (포트폴리오 여러 개)
   search_service.py        종목 검색
   pitch_service.py         전술판 — 보유 비중을 등번호로, 자리 배치
+  skin_service.py          경기장 스킨 고르기/해금 (⭐ 해금 조건은 is_unlocked 하나만)
   share_service.py         📸 이미지 명단 · 📋 텍스트 (같은 줄에서 만듭니다)
   naver_link_service.py    네이버 증권 바로가기
   visitor_service.py       TODAY / TOTAL
@@ -150,6 +162,7 @@ components/
   football_pitch/          ⚽ 전술판 (ETF MANAGER 2027 에서 옮겨 옴, 순수 HTML/JS)
   pitch_grid.py            슬롯 격자 5칸 × 6라인 = 26자리
   pitch_kit.py             유니폼 색(운용사 브랜드) + 긴 한국 ETF 이름 축약
+  skins.py                 경기장 스킨 21벌 (기본 + 클럽풍 20) — 순수 데이터
 tools/build_issuer_index.py  매핑 시드 배치 — 개발자 PC 에서만 실행
 tests/                     pytest
 ```
@@ -171,6 +184,8 @@ tests/                     pytest
 | 전술판 자리 배치·등번호 | `services/pitch_service.py` |
 | 전술판 모양·캡처 이미지 | `components/football_pitch/frontend/index.html` |
 | 유니폼 색 / 이름 축약 | `components/pitch_kit.py` |
+| 스킨 추가·색 | `components/skins.py` (데이터만 추가하면 끝) |
+| 스킨 해금 조건 | `services/skin_service.py` 의 `is_unlocked()` |
 | 공유용 텍스트 | `services/share_service.py` |
 | 화면 배치 | `app.py` |
 
