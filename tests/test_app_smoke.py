@@ -75,7 +75,7 @@ def test_example_button_fills_the_screen(offline):
     buttons[0].click().run()
     assert not at.exception
     text = " ".join(m.value for m in at.markdown)
-    assert "지금 내 ETF 자산" in text
+    assert "지금 내 ETF" in text
     assert "ETF 월급" in text
 
 
@@ -126,7 +126,7 @@ def test_adding_a_holding_puts_it_on_the_home_screen(offline, fake_search):
     assert not at.exception
 
     text = " ".join(m.value for m in at.markdown)
-    assert "지금 내 ETF 자산" in text          # 빈 화면에서 홈 화면으로 넘어감
+    assert "지금 내 ETF" in text          # 빈 화면에서 홈 화면으로 넘어감
     assert "Schwab US Dividend Equity ETF" in text
 
 

@@ -30,13 +30,18 @@ from components import pitch_grid
 from components.football_pitch import football_pitch
 from components.local_store import local_store
 from components.ui import (
+    grid_html,
     header,
     inject_css,
     kcard,
+    kcard_html,
     linkchips,
     listrow,
     note,
+    panel,
     paycard,
+    paycard_html,
+    row_html,
     section,
     skin_gallery,
     warn,
@@ -153,75 +158,81 @@ def render_empty() -> None:
 # 5. 홈
 # =====================================================================
 def render_home() -> None:
-    # -- 맨 위 세 숫자 --------------------------------------------------
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        kcard(F.won(summary.total_value_krw), "지금 내 ETF 자산",
-              f"{len(portfolio.holdings)}개 계좌 · {len(portfolio.tickers())}개 종목")
-    with c2:
-        kcard(F.won(summary.total_cost_krw), "내가 넣은 돈",
-              "입력한 평균 매입가격 기준")
-    with c3:
-        profit = summary.total_profit_krw
-        kcard(F.won_signed(profit), "지금까지 벌거나 잃은 돈",
-              F.pct_signed(summary.profit_rate) if summary.profit_rate is not None else "",
-              tone="up" if profit > 0 else ("down" if profit < 0 else ""))
+    """홈.
+
+    화면 구성 원칙 — **한 제목은 하나의 테두리를 갖습니다.**
+    예전에는 제목이 그냥 글자였고 카드는 흰 바탕 위의 흰 카드라, 뭐가 뭐에
+    속하는지 안 보이고 화면이 떠다녔습니다. 지금은 묶음마다 `ui.panel()` 로
+    감쌉니다. 패널만 선을 긋고 안의 카드는 은은한 채움으로만 구분합니다.
+
+    문구도 함께 덜어냈습니다. 설명이 필요한 자리에는 남기되, 카드 밑에
+    한 번 더 풀어 쓰던 줄들은 없앴습니다 — 읽을 게 많으면 아무것도 안 읽힙니다.
+    """
+    # -- ① 지금 얼마인가 -------------------------------------------------
+    profit = summary.total_profit_krw
+    panel(
+        "지금 내 ETF",
+        grid_html([
+            kcard_html(F.won(summary.total_value_krw), "지금 내 돈",
+                       f"{len(portfolio.tickers())}개 종목 · "
+                       f"{len(portfolio.holdings)}개 계좌"),
+            kcard_html(F.won(summary.total_cost_krw), "내가 넣은 돈"),
+            kcard_html(F.won_signed(profit), "벌거나 잃은 돈",
+                       F.pct_signed(summary.profit_rate)
+                       if summary.profit_rate is not None else "",
+                       tone="up" if profit > 0 else ("down" if profit < 0 else "")),
+        ], cols=3),
+    )
 
     if summary.has_missing:
         names = ", ".join(sorted({m.holding.name or m.holding.ticker
                                   for m in summary.missing}))
         warn(f"{names} 은(는) 지금 가격을 확인하지 못해 위 합계에서 빠졌습니다. "
-             f"0원으로 세지 않았습니다. 잠시 뒤 '🔄 정보 업데이트' 를 눌러 보세요.")
+             f"0원으로 세지 않았습니다.")
 
-    st.write("")
-
-    # -- 이번 달 ETF 월급 ------------------------------------------------
+    # -- ② 얼마가 들어오는가 ---------------------------------------------
     this_month = CF.month_total(portfolio, dists, today.year, today.month,
                                 latest_rate=summary.usdkrw)
-    left, right = st.columns([3, 2])
-    with left:
-        subs = [("세금 계산에 잡히는 금액", F.won(this_month.tax_basis_krw))]
-        if this_month.tax_basis_is_partial:
-            subs.append(("자료가 없는 건", f"{this_month.unknown_tax_basis_rows}건"))
-        paycard(
+    year = CF.year_total(portfolio, dists, today.year, latest_rate=summary.usdkrw)
+    ny, nm = (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
+    nxt = CF.month_total(portfolio, dists, ny, nm, latest_rate=summary.usdkrw)
+
+    subs = [("세금 계산에 잡히는 금액", F.won(this_month.tax_basis_krw))]
+    if this_month.tax_basis_is_partial:
+        subs.append(("자료가 없는 건", f"{this_month.unknown_tax_basis_rows}건"))
+
+    panel(
+        "ETF 월급",
+        paycard_html(
             F.won(this_month.amount_krw),
-            f"💰 {today.year}년 {today.month}월 ETF 월급",
-            "이번 달에 들어오는(들어온) 분배금 합계"
-            + (" · 일부는 예상값입니다" if this_month.has_estimate else ""),
+            f"{today.year}년 {today.month}월",
+            "이번 달에 들어오는 돈"
+            + (" · 일부 예상 포함" if this_month.has_estimate else ""),
             subs,
         )
-    with right:
-        year = CF.year_total(portfolio, dists, today.year, latest_rate=summary.usdkrw)
-        kcard(F.won(year.amount_krw), f"{today.year}년에 지금까지 받은 ETF 월급",
-              f"세금 계산 기준 {F.won(year.tax_basis_krw)} · "
-              f"세금에 안 잡힌 금액 {F.won(year.non_taxed_krw)}")
-        st.write("")
-        ny, nm = (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
-        nxt = CF.month_total(portfolio, dists, ny, nm, latest_rate=summary.usdkrw)
-        kcard(F.won(nxt.amount_krw) if nxt.rows else config.NO_DATA_TEXT,
-              f"{nm}월에 들어올 것으로 보이는 돈",
-              "🟡 예상값입니다. 실제 발표 금액과 다를 수 있습니다." if nxt.has_estimate
-              else ("확정된 지급만 있습니다" if nxt.rows else "아직 알 수 있는 게 없습니다"))
+        + "<div style='height:10px'></div>"
+        + grid_html([
+            kcard_html(F.won(nxt.amount_krw) if nxt.rows else config.NO_DATA_TEXT,
+                       f"{nm}월에 들어올 돈",
+                       "🟡 예상값입니다" if nxt.has_estimate
+                       else ("확정된 지급만 있습니다" if nxt.rows else "아직 알 수 없습니다")),
+            kcard_html(F.won(year.amount_krw), f"{today.year}년 누적",
+                       f"세금 계산 기준 {F.won(year.tax_basis_krw)}"),
+        ], cols=2),
+    )
 
     if this_month.tax_basis_is_partial or year.tax_basis_is_partial:
-        note("※ '세금 계산에 잡히는 금액' 은 운용사가 발표한 자료가 있는 건만 더한 값입니다. "
-             "아직 발표 전이거나 자료를 확인할 수 없는 건은 0원으로 세지 않고 빼두었습니다.")
+        note("※ '세금 계산에 잡히는 금액' 은 운용사가 발표한 건만 더한 값입니다. "
+             "아직 발표 전인 건은 0원으로 세지 않고 뺐습니다.")
 
-    st.write("")
-
-    # -- 이번 달 지급 내역 -----------------------------------------------
-    section(f"{today.month}월 지급 내역",
-            "날짜 · 종목 · 어느 증권사로 들어오는지" if this_month.rows else "")
+    # -- ③ 이번 달 지급 내역 ---------------------------------------------
     if not this_month.rows:
-        note("이번 달에는 예정된 분배금이 없습니다. (자료가 없는 종목은 여기에 안 나옵니다)")
+        panel(f"{today.month}월 지급 내역",
+              "<div class='note'>이번 달에는 예정된 분배금이 없습니다.</div>")
     else:
-        if any(r.record_note for r in this_month.rows):
-            note("※ '기준' 날짜는 그날 갖고 있어야 받는다는 뜻입니다. "
-                 "월말이 기준인 ETF 는 돈이 다음 달 초에 들어와서, "
-                 "여기에는 들어온 달 기준으로 적혀 있습니다.")
-        for r in this_month.rows:
-            listrow(
-                f"{F.md(r.payment_date)}  {r.name}",
+        rows = "".join(
+            row_html(
+                f"{F.md(r.payment_date)}　{r.name}",
                 f"{r.holding.where()} · {F.shares(r.holding.shares)}"
                 + (f" · {r.record_note}" if r.record_note else ""),
                 F.won(r.amount_krw),
@@ -229,46 +240,53 @@ def render_home() -> None:
                 else f"세금 기준 {r.tax_basis_note}",
                 chip="예상" if r.is_estimated else "",
             )
+            for r in this_month.rows
+        )
+        panel(f"{today.month}월 지급 내역", rows)
+        if any(r.record_note for r in this_month.rows):
+            note("※ '기준' 은 그날 갖고 있어야 받는다는 뜻입니다. "
+                 "월말 기준 ETF 는 돈이 다음 달 초에 들어옵니다.")
 
-    st.write("")
+    # -- ④ 내 ETF --------------------------------------------------------
+    rows = ""
+    for g in PS.group_by_ticker(summary):
+        v = g.value_krw(summary.usdkrw)
+        c = g.cost_krw(summary.usdkrw)
+        gain = (v - c) if (v is not None and c is not None) else None
+        places = len({r.holding.where() for r in g.rows})
+        rows += row_html(
+            g.name,
+            f"{F.shares(g.total_shares)} · 평균 {F.native_amt(g.avg_price, g.currency)}"
+            + (f" · {places}개 계좌" if places > 1 else ""),
+            F.won(v) if v is not None else config.NO_DATA_TEXT,
+            F.won_signed(gain) if gain is not None else "",
+            # 차트·뉴스처럼 이 앱이 안 만드는 건 증권사 화면으로 넘깁니다.
+            # 만들 수 있는 주소만 옵니다(빈 페이지로 보내지 않으려고).
+            links=link_service.links_for(g.market, g.ticker),
+        )
+    panel("내 ETF", rows)
 
-    # -- 증권사별 --------------------------------------------------------
-    section("내 돈은 어디에 있나요?", "증권사를 누르면 계좌별로 쪼개서 볼 수 있습니다.")
+    # -- ⑤ 증권사별 ------------------------------------------------------
+    # ⚠ 여기는 expander(위젯)라 패널로 못 감쌉니다. Streamlit 은 위젯을
+    #    내가 만든 <div> 안에 넣어주지 않습니다.
+    section("어디에 있나요?", "증권사를 누르면 계좌별로 쪼개서 볼 수 있습니다.")
     for g in PS.group_by_broker(summary):
         share = (f" · 전체의 {g.value_krw / summary.total_value_krw * 100:.0f}%"
                  if summary.total_value_krw > 0 else "")
         with st.expander(f"**{g.broker}**　{F.won(g.value_krw)}{share}"):
             for account, value in sorted(g.accounts.items(), key=lambda x: -x[1]):
                 st.markdown(f"**{account}** — {F.won(value)}")
-                for r in g.rows:
-                    if (r.holding.account or "계좌 미지정") != account:
-                        continue
-                    listrow(r.holding.name or r.holding.ticker,
-                            f"{F.shares(r.holding.shares)} · 평균 "
-                            f"{F.native_amt(r.holding.avg_price, r.holding.currency)}",
-                            F.won(r.value_krw(summary.usdkrw)),
-                            F.won_signed(r.profit_krw(summary.usdkrw))
-                            if r.profit_krw(summary.usdkrw) is not None else "")
-
-    st.write("")
-
-    # -- 내 ETF 목록 -----------------------------------------------------
-    section("내 ETF")
-    for g in PS.group_by_ticker(summary):
-        v = g.value_krw(summary.usdkrw)
-        c = g.cost_krw(summary.usdkrw)
-        profit = (v - c) if (v is not None and c is not None) else None
-        places = len({r.holding.where() for r in g.rows})
-        listrow(
-            g.name,
-            f"{F.shares(g.total_shares)} · 평균 {F.native_amt(g.avg_price, g.currency)}"
-            + (f" · {places}개 계좌에 나눠 보유" if places > 1 else ""),
-            F.won(v) if v is not None else config.NO_DATA_TEXT,
-            F.won_signed(profit) if profit is not None else "",
-            # 차트·뉴스처럼 이 앱이 안 만드는 건 증권사 화면으로 넘깁니다.
-            # 만들 수 있는 주소만 옵니다(빈 페이지로 보내지 않으려고).
-            links=link_service.links_for(g.market, g.ticker),
-        )
+                inner = "".join(
+                    row_html(r.holding.name or r.holding.ticker,
+                             f"{F.shares(r.holding.shares)} · 평균 "
+                             f"{F.native_amt(r.holding.avg_price, r.holding.currency)}",
+                             F.won(r.value_krw(summary.usdkrw)),
+                             F.won_signed(r.profit_krw(summary.usdkrw))
+                             if r.profit_krw(summary.usdkrw) is not None else "")
+                    for r in g.rows
+                    if (r.holding.account or "계좌 미지정") == account
+                )
+                st.markdown(inner, unsafe_allow_html=True)
 
     st.write("")
     render_pitch(this_month, year)

@@ -21,82 +21,123 @@ import config
 # 색은 한 곳에서만 정합니다. 여기 안 거치고 코드에 색을 직접 쓰지 마세요.
 CSS = """
 <style>
+  /* ===================================================================
+     색 — 한 곳에서만 정합니다. 여기 안 거치고 코드에 색을 직접 쓰지 마세요.
+
+     차가운 회색(#F5F7FA)에서 **미색·흙빛**으로 옮겼습니다. 화면이 어수선한
+     이유의 절반은 색이 많아서였습니다. 지금 남은 것은 네 가지뿐입니다.
+
+         종이(미색) · 먹(글자) · 은은한 채움 · 선 하나
+
+     오르내림(빨강/파랑)은 장식이 아니라 **정보**라서 남깁니다.
+     =================================================================== */
   :root {
-    --ink:        #111418;
-    --ink-soft:   #5C6470;
-    --ink-faint:  #8A9199;
-    --line:       #E7EAEE;
-    --card:       #FFFFFF;
-    --bg-soft:    #F5F7FA;
+    --paper:      #FAF9F6;   /* 화면 바탕 — 순백이 아닌 미색 */
+    --panel:      #FFFFFF;   /* 패널 바탕 */
+    --tint:       #F4F2ED;   /* 은은한 채움 (카드 안쪽) */
+    --tint-deep:  #EDEAE3;   /* 한 단 더 눌러야 할 때 */
+    --line:       #E4E0D8;   /* 머리카락 선 */
+    --line-soft:  #EFECE5;
+    --ink:        #16181A;   /* 먹 */
+    --ink-soft:   #5E6268;
+    --ink-faint:  #93918C;
     --brand:      #1454FF;
-    --up:         #E3342F;   /* 한국 관습: 오른 것이 빨강 */
-    --down:       #1266F1;
-    --warn-bg:    #FFF8E6;
-    --warn-line:  #F2D48A;
+    --up:         #C7362F;   /* 한국 관습: 오른 것이 빨강 */
+    --down:       #1F5FD0;
+    --warn-bg:    #FBF6E8;
+    --warn-line:  #E6D8AE;
+    --bg-soft:    #F4F2ED;   /* 옛 이름 — 쓰던 곳이 안 깨지게 둡니다 */
+    --card:       #FFFFFF;
   }
 
-  /* 기본 여백을 줄여서 첫 화면에 핵심 숫자가 다 들어오게 합니다. */
-  .block-container { padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1080px; }
+  .stApp { background: var(--paper); }
+  .block-container { padding-top: 1.4rem; padding-bottom: 3.5rem; max-width: 1040px; }
 
+  /* ---- 머리 ---- */
   .app-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
-  .app-title { font-size: 1.45rem; font-weight: 800; color: var(--ink); margin:0;
-               letter-spacing:-.02em; }
-  .app-ver { font-size:.78rem; font-weight:700; color:var(--ink-faint);
-             background:var(--bg-soft); border-radius:999px; padding:2px 8px; }
-  .app-tag { font-size:.9rem; color:var(--ink-soft); margin:.25rem 0 0; }
+  .app-title { font-size: 1.4rem; font-weight: 800; color: var(--ink); margin:0;
+               letter-spacing:-.03em; }
+  .app-ver { font-size:.72rem; font-weight:700; color:var(--ink-faint);
+             background:var(--tint); border-radius:999px; padding:2px 8px; }
+  .app-tag { font-size:.86rem; color:var(--ink-soft); margin:.25rem 0 0; }
 
-  /* 오른쪽 위 방문자 수 */
   .visitors { display:flex; justify-content:flex-end; gap:14px; padding-top:12px;
-              font-size:12.5px; color:#8a8f98;
-              font-variant-numeric: tabular-nums;   /* 숫자 폭 고정 — 갱신될 때 안 흔들림 */
+              font-size:12px; color:var(--ink-faint);
+              font-variant-numeric: tabular-nums;   /* 갱신될 때 안 흔들리게 */
               white-space:nowrap; }
-  .visitors b { font-size:11px; font-weight:700; letter-spacing:.04em;
-                color:#8a8f98; margin-right:3px; }
+  .visitors b { font-size:10.5px; font-weight:700; letter-spacing:.06em;
+                color:var(--ink-faint); margin-right:3px; }
 
-  /* 값 + 설명 카드 */
-  .kcard { background:var(--card); border:1px solid var(--line); border-radius:16px;
-           padding:18px 20px; height:100%; }
-  .kcard .v { font-size:1.6rem; font-weight:800; color:var(--ink);
-              letter-spacing:-.03em; font-variant-numeric: tabular-nums; }
-  .kcard .l { font-size:.82rem; color:var(--ink-soft); margin-top:4px; }
-  .kcard .s { font-size:.78rem; color:var(--ink-faint); margin-top:8px; }
+  /* ===================================================================
+     패널 — "이게 한 제목의 테두리구나" 가 보이게 하는 그릇
+     -------------------------------------------------------------------
+     예전에는 제목이 그냥 #### 글자였고, 카드는 흰 바탕 위의 흰 카드였습니다.
+     그래서 뭐가 뭐에 속하는지 안 보이고 화면이 떠다녔습니다.
+
+     지금은 **테두리를 패널 하나만 가집니다.** 안의 카드는 선을 안 긋고
+     은은한 채움으로만 구분합니다. 선이 겹치지 않아야 조용해집니다.
+     =================================================================== */
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:18px;
+           padding:20px 22px; margin:0 0 14px; }
+  .panel-h { font-size:.95rem; font-weight:800; color:var(--ink);
+             letter-spacing:-.02em; }
+  .panel-s { font-size:.78rem; color:var(--ink-faint); margin-top:3px; }
+  .panel-b { margin-top:14px; }
+
+  /* 패널 안의 격자 — 카드 여러 장 */
+  .grid { display:grid; gap:10px; }
+  .grid.c2 { grid-template-columns:repeat(2,1fr); }
+  .grid.c3 { grid-template-columns:repeat(3,1fr); }
+  .grid.c4 { grid-template-columns:repeat(4,1fr); }
+
+  /* ---- 값 카드 — 테두리 없이 은은한 채움만 ---- */
+  .kcard { background:var(--tint); border:none; border-radius:14px;
+           padding:16px 18px; height:100%; }
+  .kcard .v { font-size:1.5rem; font-weight:800; color:var(--ink);
+              letter-spacing:-.035em; font-variant-numeric: tabular-nums;
+              line-height:1.15; }
+  .kcard .l { font-size:.8rem; color:var(--ink-soft); margin-top:5px; }
+  .kcard .s { font-size:.74rem; color:var(--ink-faint); margin-top:7px; }
   .kcard.up .v  { color:var(--up); }
   .kcard.down .v{ color:var(--down); }
 
-  /* 이번 달 월급 — 화면에서 제일 큰 카드 */
-  .paycard { background:linear-gradient(135deg,#1454FF 0%,#3E7BFF 100%);
-             border-radius:20px; padding:24px 26px; color:#fff; }
-  .paycard .cap { font-size:.9rem; opacity:.85; font-weight:600; }
-  .paycard .v { font-size:2.6rem; font-weight:800; letter-spacing:-.04em;
-                margin:.15rem 0 .1rem; font-variant-numeric: tabular-nums; }
-  .paycard .l { font-size:.85rem; opacity:.9; }
-  .paycard .sub { margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,.25);
+  /* ---- 이번 달 월급 — 화면에서 가장 무거운 한 덩어리 ----
+     파랑 그라디언트를 먹색 단색으로 바꿨습니다. 그라디언트는 시선을 끄는
+     대신 화면을 시끄럽게 합니다. 한 덩어리가 조용히 무거운 편이 낫습니다. */
+  .paycard { background:var(--ink); border-radius:16px; padding:22px 24px; color:#fff; }
+  .paycard .cap { font-size:.8rem; opacity:.7; font-weight:600; }
+  .paycard .v { font-size:2.5rem; font-weight:800; letter-spacing:-.045em;
+                margin:.18rem 0 .1rem; font-variant-numeric: tabular-nums;
+                line-height:1.05; }
+  .paycard .l { font-size:.8rem; opacity:.66; }
+  .paycard .sub { margin-top:16px; padding-top:13px;
+                  border-top:1px solid rgba(255,255,255,.16);
                   display:flex; gap:26px; flex-wrap:wrap; }
-  .paycard .sub .k { font-size:.75rem; opacity:.85; }
-  .paycard .sub .n { font-size:1.05rem; font-weight:700;
+  .paycard .sub .k { font-size:.72rem; opacity:.6; }
+  .paycard .sub .n { font-size:1.02rem; font-weight:700; margin-top:2px;
                      font-variant-numeric: tabular-nums; }
 
-  /* 목록 한 줄 */
+  /* ---- 목록 한 줄 ---- */
   .row { display:flex; align-items:center; justify-content:space-between;
-         padding:12px 4px; border-bottom:1px solid var(--line); }
+         padding:11px 2px; border-bottom:1px solid var(--line-soft); gap:12px; }
   .row:last-child { border-bottom:none; }
-  .row .nm { font-weight:700; color:var(--ink); font-size:.95rem; }
-  .row .sb { font-size:.78rem; color:var(--ink-faint); margin-top:2px; }
-  .row .rt { text-align:right; }
+  .row .nm { font-weight:700; color:var(--ink); font-size:.92rem; }
+  .row .sb { font-size:.76rem; color:var(--ink-faint); margin-top:2px; }
+  .row .rt { text-align:right; white-space:nowrap; }
   .row .amt { font-weight:700; font-variant-numeric: tabular-nums; }
 
-  .chip { display:inline-block; font-size:.72rem; font-weight:700; border-radius:999px;
-          padding:2px 8px; background:var(--bg-soft); color:var(--ink-soft);
+  .chip { display:inline-block; font-size:.7rem; font-weight:700; border-radius:999px;
+          padding:2px 8px; background:var(--tint-deep); color:var(--ink-soft);
           margin-left:6px; white-space:nowrap; }
-  a.chip.link { color:var(--brand); text-decoration:none; border:1px solid #D7E3FF;
-                background:#F3F7FF; }
-  a.chip.link:hover { background:#E6EFFF; }
+  a.chip.link { color:var(--ink-soft); text-decoration:none; border:1px solid var(--line);
+                background:var(--panel); }
+  a.chip.link:hover { background:var(--tint); color:var(--ink); }
 
-  /* 스킨 미리보기 — 경기장 한 벌을 작은 띠 하나로 보여줍니다 */
+  /* ---- 스킨 미리보기 ---- */
   .skins { display:grid; grid-template-columns:repeat(auto-fill,minmax(148px,1fr)); gap:8px; }
   .skinbox { border:1px solid var(--line); border-radius:10px; overflow:hidden;
-             background:var(--card); }
-  .skinbox.on { border-color:var(--brand); box-shadow:0 0 0 2px #DCE7FF; }
+             background:var(--panel); }
+  .skinbox.on { border-color:var(--ink); box-shadow:0 0 0 2px var(--tint-deep); }
   .skinbox .band { height:10px; }
   .skinbox .turf { height:26px; position:relative; }
   .skinbox .turf i { position:absolute; left:50%; top:50%; width:34%; height:56%;
@@ -106,24 +147,29 @@ CSS = """
                  padding:6px 8px 2px; line-height:1.25; }
   .skinbox .kr { font-size:.68rem; color:var(--ink-faint); padding:0 8px 7px; }
 
-  .note { font-size:.8rem; color:var(--ink-faint); }
+  .note { font-size:.78rem; color:var(--ink-faint); }
   .warn { background:var(--warn-bg); border:1px solid var(--warn-line); border-radius:12px;
-          padding:10px 14px; font-size:.85rem; color:#7A5B00; }
+          padding:10px 14px; font-size:.84rem; color:#6E5A20; }
 
-  /* 분배금 달력 */
+  /* ---- 분배금 달력 ---- */
   .cal { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
   .cal .h { text-align:center; font-size:.72rem; color:var(--ink-faint); padding:4px 0; }
-  .cal .d { border:1px solid var(--line); border-radius:10px; min-height:62px;
-            padding:6px 7px; background:var(--card); }
+  .cal .d { border:1px solid var(--line-soft); border-radius:10px; min-height:62px;
+            padding:6px 7px; background:var(--panel); }
   .cal .d.empty { border:none; background:transparent; }
   .cal .d .n { font-size:.72rem; color:var(--ink-faint); }
-  .cal .d .m { font-size:.78rem; font-weight:800; color:var(--brand); margin-top:6px;
+  .cal .d .m { font-size:.78rem; font-weight:800; color:var(--ink); margin-top:6px;
                font-variant-numeric: tabular-nums; line-height:1.2; }
-  .cal .d.pay { background:#F3F7FF; border-color:#CFE0FF; }
+  .cal .d.pay { background:var(--tint); border-color:var(--line); }
 
-  @media (max-width: 640px) {
-    .paycard .v { font-size:2.1rem; }
-    .kcard .v { font-size:1.35rem; }
+  @media (max-width: 720px) {
+    .grid.c3, .grid.c4 { grid-template-columns:repeat(2,1fr); }
+  }
+  @media (max-width: 460px) {
+    .panel { padding:16px 15px; border-radius:15px; }
+    .grid.c2, .grid.c3, .grid.c4 { grid-template-columns:1fr; }
+    .paycard .v { font-size:2rem; }
+    .kcard .v { font-size:1.3rem; }
   }
 </style>
 """
@@ -255,3 +301,62 @@ def section(title: str, hint: str = "") -> None:
     st.markdown(f"#### {title}")
     if hint:
         note(hint)
+
+
+# =====================================================================
+# 패널 — 한 제목이 하나의 테두리를 갖게 하는 그릇
+# =====================================================================
+# ⚠ **Streamlit 에서는 여는 <div> 만 따로 뱉는 방법이 없습니다.**
+#    `st.markdown` 은 블록마다 자기 래퍼 안에 넣고 브라우저가 태그를 닫아버려서,
+#    "여기서 열고 저 아래서 닫기" 가 안 됩니다. 그래서 패널 하나는 **HTML 한
+#    덩어리로 한 번에** 그립니다. 아래 `*_html()` 들이 그 조각입니다.
+#
+#    위젯(셀렉트박스·버튼)이 들어가야 하는 자리는 패널로 감쌀 수 없습니다.
+#    그런 곳은 `section()` 을 그대로 씁니다.
+
+
+def kcard_html(value: str, label: str, sub: str = "", tone: str = "") -> str:
+    """값 하나 + 그게 무슨 뜻인지 한 줄. tone: "" | "up" | "down"."""
+    cls = f"kcard {tone}".strip()
+    sub_html = f"<div class='s'>{_esc(sub)}</div>" if sub else ""
+    return (f"<div class='{cls}'><div class='v'>{_esc(value)}</div>"
+            f"<div class='l'>{_esc(label)}</div>{sub_html}</div>")
+
+
+def paycard_html(amount: str, caption: str, label: str,
+                 subs: list[tuple[str, str]]) -> str:
+    sub_html = "".join(
+        f"<div><div class='k'>{_esc(k)}</div><div class='n'>{_esc(v)}</div></div>"
+        for k, v in subs
+    )
+    return (f"<div class='paycard'><div class='cap'>{_esc(caption)}</div>"
+            f"<div class='v'>{_esc(amount)}</div><div class='l'>{_esc(label)}</div>"
+            f"<div class='sub'>{sub_html}</div></div>")
+
+
+def row_html(name: str, subtitle: str, amount: str, amount_sub: str = "",
+             chip: str = "", links: list[tuple[str, str]] | None = None) -> str:
+    """목록 한 줄."""
+    chips = f"<span class='chip'>{_esc(chip)}</span>" if chip else ""
+    if links:
+        chips += linkchips(links)
+    sub = f"<div class='sb'>{_esc(amount_sub)}</div>" if amount_sub else ""
+    return (f"<div class='row'><div><div class='nm'>{_esc(name)}{chips}</div>"
+            f"<div class='sb'>{_esc(subtitle)}</div></div>"
+            f"<div class='rt'><div class='amt'>{_esc(amount)}</div>{sub}</div></div>")
+
+
+def grid_html(cards: list[str], cols: int = 3) -> str:
+    """카드 여러 장을 한 격자에. 좁은 화면에서는 CSS 가 알아서 접습니다."""
+    return f"<div class='grid c{int(cols)}'>{''.join(cards)}</div>"
+
+
+def panel(title: str, body: str, hint: str = "") -> None:
+    """제목 하나 + 그 아래 내용을 **테두리 하나**로 감싸 그립니다.
+
+    `body` 는 위의 `*_html()` 들을 이어 붙인 문자열입니다.
+    """
+    head = f"<div class='panel-h'>{_esc(title)}</div>" if title else ""
+    sub = f"<div class='panel-s'>{_esc(hint)}</div>" if hint else ""
+    st.markdown(f"<div class='panel'>{head}{sub}<div class='panel-b'>{body}</div></div>",
+                unsafe_allow_html=True)
