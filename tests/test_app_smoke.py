@@ -117,8 +117,10 @@ def test_adding_a_holding_puts_it_on_the_home_screen(offline, fake_search):
 
     qty = [n for n in at.number_input if "몇 주" in n.label][0]
     qty.set_value(180).run()
-    price = [n for n in at.number_input if "얼마에 샀나요" in n.label][0]
-    price.set_value(30.5).run()
+    # 평단가는 세 자리 콤마를 찍어야 해서 글자 칸입니다(number_input 은 콤마를
+    # 못 찍습니다). 사람이 콤마를 넣어 쳐도 그대로 읽혀야 합니다.
+    price = [t for t in at.text_input if "얼마에 샀나요" in t.label][0]
+    price.set_value("30.5").run()
 
     [b for b in at.button if b.label == "저장"][0].click().run()
     assert not at.exception
@@ -178,3 +180,46 @@ def test_skin_picker_changes_the_pitch_and_is_saved(offline, fake_search):
     box.set_value(target).run()
     assert not at.exception
     assert at.session_state["store"].active().skin == "london-red"
+
+
+def test_price_box_adds_thousand_separators(offline, fake_search):
+    """평단가는 세 자리 콤마가 붙어야 합니다. `st.number_input` 은 콤마를 못
+    찍어서(format 이 printf 라 자릿수 구분 기호가 없습니다) 글자 칸으로 받고
+    직접 찍습니다."""
+    import app as app_module
+
+    assert app_module._format_money("32000") == "32,000"
+    assert app_module._format_money("1234567") == "1,234,567"
+    assert app_module._format_money("30.5") == "30.5"        # 달러 평단가
+    assert app_module._format_money("1234.567") == "1,234.567"
+    assert app_module._format_money("") == ""
+    # 이미 콤마가 붙은 것을 다시 넣어도 망가지면 안 됩니다(엔터를 두 번 칩니다)
+    assert app_module._format_money("32,000") == "32,000"
+
+    # 사람이 콤마를 넣어 쳐도 숫자로 읽혀야 합니다
+    assert app_module._parse_money("32,000") == 32000.0
+    assert app_module._parse_money("₩ 1,234.5") == 1234.5
+    assert app_module._parse_money("") == 0.0
+    assert app_module._parse_money("abc") == 0.0
+
+
+def test_amount_boxes_reset_when_a_different_stock_is_picked(offline, fake_search):
+    """앞 종목의 수량·평단가가 남아 있으면 그대로 저장하게 됩니다(실제로
+    잘못 눌렀다는 지적을 받았습니다). 증권사·계좌는 **그대로 둡니다** —
+    같은 계좌에 여러 종목을 연달아 넣는 일이 흔합니다."""
+    at = AppTest.from_file(APP, default_timeout=90).run()
+
+    box = [t for t in at.text_input if "어떤 ETF" in t.label][0]
+    box.set_value("SCHD").run()
+    [n for n in at.number_input if "몇 주" in n.label][0].set_value(180).run()
+    [t for t in at.text_input if "얼마에 샀나요" in t.label][0].set_value("30.5").run()
+
+    broker_before = [s for s in at.selectbox if "어디에" in s.label][0].value
+
+    # 저장하면 검색어·수량·평단가는 비고, 증권사는 남습니다.
+    [b for b in at.button if b.label == "저장"][0].click().run()
+    assert not at.exception
+    assert [n for n in at.number_input if "몇 주" in n.label][0].value == 0.0
+    assert [t for t in at.text_input if "얼마에 샀나요" in t.label][0].value == ""
+    assert [t for t in at.text_input if "어떤 ETF" in t.label][0].value == ""
+    assert [s for s in at.selectbox if "어디에" in s.label][0].value == broker_before

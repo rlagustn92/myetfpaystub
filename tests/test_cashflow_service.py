@@ -186,3 +186,44 @@ def test_monthly_series_has_twelve_months_in_order():
     series = CF.monthly_series(p, {("KR", "498400"): td("498400", [])},
                                2026, today=TODAY, latest_rate=FX)
     assert [m for m, _ in series] == list(range(1, 13))
+
+
+# ------------------------------------------ 과세표준을 모를 때 "왜" 를 적는가
+def test_tax_basis_note_says_why_it_is_missing():
+    """"자료 없음" 한 마디로는 **앱이 못 가져온 건지 운용사가 안 낸 건지**
+    알 수 없어 혼란스럽다는 지적을 받았습니다.
+
+    실제로 KODEX 200타겟위클리커버드콜은 2026-05·06월 두 건의 과세표준을
+    삼성자산운용이 아직 안 올렸습니다(운용사 API 가 `taxDividA: null`).
+    앱 문제가 아니라서, 그렇게 적어야 합니다.
+    """
+    h = Holding(ticker="498400", market="KR", name="KODEX 200타겟위클리커버드콜",
+                broker="키움증권", account="일반", shares=100, avg_price=20000)
+
+    known = CF.PayslipRow(
+        payment_date=date(2026, 9, 17), holding=h,
+        dist=Distribution(ticker="498400", payment_date=date(2026, 9, 17),
+                          distribution_per_share=300.0, tax_basis_per_share=2.0),
+        amount_krw=30000.0, tax_basis_krw=200.0, tax_basis_supported=True)
+    assert known.tax_basis_note == ""          # 알고 있으면 아무 말도 안 붙입니다
+
+    unpublished = CF.PayslipRow(
+        payment_date=date(2026, 6, 17), holding=h,
+        dist=Distribution(ticker="498400", payment_date=date(2026, 6, 17),
+                          distribution_per_share=350.0, tax_basis_per_share=None),
+        amount_krw=35000.0, tax_basis_krw=None, tax_basis_supported=True)
+    assert unpublished.tax_basis_note == config.TAX_BASIS_UNPUBLISHED
+
+    unsupported = CF.PayslipRow(
+        payment_date=date(2026, 6, 17), holding=h,
+        dist=Distribution(ticker="498400", payment_date=date(2026, 6, 17),
+                          distribution_per_share=350.0, tax_basis_per_share=None),
+        amount_krw=35000.0, tax_basis_krw=None, tax_basis_supported=False)
+    assert unsupported.tax_basis_note == config.TAX_BASIS_UNSUPPORTED
+
+
+def test_the_two_reasons_are_different_words():
+    """같은 말로 적으면 구분한 의미가 없습니다."""
+    assert config.TAX_BASIS_UNPUBLISHED != config.TAX_BASIS_UNSUPPORTED
+    assert config.TAX_BASIS_UNPUBLISHED.strip()
+    assert config.TAX_BASIS_UNSUPPORTED.strip()

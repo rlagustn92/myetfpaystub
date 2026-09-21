@@ -40,6 +40,12 @@ class PayslipRow:
     amount_krw: float | None = None
     tax_basis_krw: float | None = None
     fx_rate: float | None = None
+    # 이 종목의 소스가 애초에 과세표준을 주는 소스인가.
+    # ⚠ `tax_basis_krw is None` 하나로는 두 가지를 구별할 수 없습니다.
+    #    (가) 운용사는 발표하는데 **그 달 값만 아직 안 올렸다**
+    #    (나) 이 소스는 **애초에 과세표준을 안 준다** (yfinance 폴백)
+    #    화면 문구가 달라야 해서 시리즈의 플래그를 줄까지 들고 옵니다.
+    tax_basis_supported: bool = True
 
     @property
     def ticker(self) -> str:
@@ -52,6 +58,19 @@ class PayslipRow:
     @property
     def is_estimated(self) -> bool:
         return self.dist.status == config.STATUS_ESTIMATED
+
+    @property
+    def tax_basis_note(self) -> str:
+        """과세표준을 모를 때 화면에 적을 **이유**. 알고 있으면 빈 문자열.
+
+        "자료 없음" 한 마디로는 앱이 못 가져온 건지 운용사가 안 낸 건지
+        알 수 없어서 혼란스럽다는 지적을 받았습니다.
+        """
+        if self.tax_basis_krw is not None:
+            return ""
+        if not self.tax_basis_supported:
+            return config.TAX_BASIS_UNSUPPORTED
+        return config.TAX_BASIS_UNPUBLISHED
 
     @property
     def has_tax_basis(self) -> bool:
@@ -139,7 +158,8 @@ def build_rows(portfolio: Portfolio,
             tb = (fx_service.to_krw(tb_native, d.currency, rate)
                   if tb_native is not None else None)
             rows.append(PayslipRow(payment_date=d.payment_date, holding=h, dist=d,
-                                   amount_krw=amount, tax_basis_krw=tb, fx_rate=rate))
+                                   amount_krw=amount, tax_basis_krw=tb, fx_rate=rate,
+                                   tax_basis_supported=td.series.tax_basis_supported))
     rows.sort(key=lambda r: (r.payment_date, r.name))
     return rows
 

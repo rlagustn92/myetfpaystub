@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 # =====================================================================
 # 사용자에게 보이는 변화가 있으면 **아주 작은 수정이라도** 이 숫자를 올립니다.
 # 화면 헤더의 서비스 이름 옆에 그대로 표시됩니다.
-APP_VERSION: str = "0.9.2"
+APP_VERSION: str = "0.10.0"
 
 APP_NAME: str = "MY ETF 급여명세서"
 APP_TAGLINE: str = "여러 증권사에 흩어진 내 ETF와 매달 들어오는 돈을 한눈에"
@@ -126,6 +126,22 @@ EXPORT_FILENAME: str = "my_etf_paystub.json"
 #   다른 칸을 보게 됩니다). 함부로 바꾸지 마세요.
 BROWSER_STORAGE_KEY: str = "my_etf_paystub_v1"
 
+
+# 과세표준을 모를 때 화면에 적는 **이유**.
+# ⚠ "자료 없음" 한 마디로는 앱이 못 가져온 건지, 운용사가 아직 안 낸 건지
+#    알 수 없어 혼란스럽다는 지적을 받았습니다. 둘을 반드시 구분해 적습니다.
+#    (실제로 KODEX 200타겟위클리커버드콜은 2026-05·06월 두 건을 삼성자산운용이
+#     아직 안 올렸습니다. 앱 문제가 아닙니다.)
+TAX_BASIS_UNPUBLISHED: str = "운용사 미발표"
+TAX_BASIS_UNSUPPORTED: str = "확인 불가"
+TAX_BASIS_UNPUBLISHED_HELP: str = (
+    "운용사가 이 달 '주당 과세표준액' 을 아직 발표하지 않았습니다. "
+    "보통 나중에 올라옵니다."
+)
+TAX_BASIS_UNSUPPORTED_HELP: str = (
+    "이 종목은 과세표준을 공개하는 자료를 찾지 못했습니다. "
+    "증권사 거래내역에서 확인하세요."
+)
 
 # =====================================================================
 # 방문자 카운터 (TODAY / TOTAL)

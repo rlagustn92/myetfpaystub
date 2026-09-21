@@ -184,15 +184,32 @@ def paycard(amount: str, caption: str, label: str, subs: list[tuple[str, str]]) 
     )
 
 
-def listrow(name: str, subtitle: str, amount: str, amount_sub: str = "",
-            chip: str = "", link: str = "", link_text: str = "Npay증권 ↗") -> None:
-    """목록 한 줄. `link` 를 주면 이름 옆에 작은 바로가기 칩이 붙습니다.
+def linkchips(links: list[tuple[str, str]]) -> str:
+    """(이름, 주소) 목록을 바로가기 칩 HTML 로. 한 곳에서 만들어야 목록과
+    상세 화면의 칩이 따로 놀지 않습니다.
 
     ⚠ 칩 글자는 짧게 두세요. "Npay증권(PC·모바일)" 처럼 길게 달았더니 종목명이
     조금만 길어져도 칩이 다음 줄로 밀렸습니다. 설명은 툴팁으로 답니다.
     """
+    return "".join(
+        f"<a class='chip link' href='{_esc(url)}' target='_blank' rel='noopener'"
+        f" title='{_esc(label)} 에서 보기 — PC·모바일 모두 같은 주소로 열립니다'>"
+        f"{_esc(label)} ↗</a>"
+        for label, url in links if url
+    )
+
+
+def listrow(name: str, subtitle: str, amount: str, amount_sub: str = "",
+            chip: str = "", link: str = "", link_text: str = "Npay증권 ↗",
+            links: list[tuple[str, str]] | None = None) -> None:
+    """목록 한 줄. `links` 를 주면 이름 옆에 바로가기 칩이 줄줄이 붙습니다.
+
+    `link`/`link_text` 는 칩 하나만 붙이던 예전 방식입니다(그대로 둡니다).
+    """
     chip_html = f"<span class='chip'>{_esc(chip)}</span>" if chip else ""
-    if link:
+    if links:
+        chip_html += linkchips(links)
+    elif link:
         chip_html += (f"<a class='chip link' href='{_esc(link)}' target='_blank'"
                       f" rel='noopener' title='PC·모바일 모두 같은 주소로 열립니다'>"
                       f"{_esc(link_text)}</a>")

@@ -14,6 +14,7 @@ app.py  --  MY ETF 급여명세서 (화면)
 
 from __future__ import annotations
 
+import re
 import warnings
 from calendar import monthrange
 from datetime import date
@@ -32,6 +33,7 @@ from components.ui import (
     header,
     inject_css,
     kcard,
+    linkchips,
     listrow,
     note,
     paycard,
@@ -45,6 +47,7 @@ from services import (
     cashflow_service as CF,
     distribution_service as DS,
     fx_service,
+    link_service,
     naver_link_service,
     pitch_service,
     portfolio_service as PS,
@@ -217,7 +220,7 @@ def render_home() -> None:
                 f"{r.holding.where()} · {F.shares(r.holding.shares)}",
                 F.won(r.amount_krw),
                 f"세금 기준 {F.won(r.tax_basis_krw)}" if r.has_tax_basis
-                else "세금 기준 자료 없음",
+                else f"세금 기준 {r.tax_basis_note}",
                 chip="예상" if r.is_estimated else "",
             )
 
@@ -256,9 +259,9 @@ def render_home() -> None:
             + (f" · {places}개 계좌에 나눠 보유" if places > 1 else ""),
             F.won(v) if v is not None else config.NO_DATA_TEXT,
             F.won_signed(profit) if profit is not None else "",
-            # 차트·뉴스처럼 이 앱이 안 만드는 건 네이버 증권으로 넘깁니다.
-            # 주소를 못 찾으면 링크를 안 그립니다(빈 페이지로 보내지 않으려고).
-            link=naver_link_service.url_for(g.market, g.ticker) or "",
+            # 차트·뉴스처럼 이 앱이 안 만드는 건 증권사 화면으로 넘깁니다.
+            # 만들 수 있는 주소만 옵니다(빈 페이지로 보내지 않으려고).
+            links=link_service.links_for(g.market, g.ticker),
         )
 
     st.write("")
@@ -431,7 +434,8 @@ def render_payslip() -> None:
                     "계좌": r.holding.account or "-",
                     "수량": F.shares(r.holding.shares),
                     "받는 금액": F.won(r.amount_krw),
-                    "세금 계산 기준": F.won(r.tax_basis_krw) if r.has_tax_basis else "자료 없음",
+                    "세금 계산 기준": (F.won(r.tax_basis_krw) if r.has_tax_basis
+                                  else r.tax_basis_note),
                     "": "🟡 예상" if r.is_estimated else "🟢 확인",
                 }
                 for r in total.rows
@@ -489,7 +493,8 @@ def render_calendar(year: int, month: int, total: CF.PeriodTotal) -> None:
         for r in by_day[picked].rows:
             listrow(r.name, f"{r.holding.where()} · {F.shares(r.holding.shares)}",
                     F.won(r.amount_krw),
-                    f"세금 기준 {F.won(r.tax_basis_krw)}" if r.has_tax_basis else "세금 기준 자료 없음",
+                    f"세금 기준 {F.won(r.tax_basis_krw)}" if r.has_tax_basis
+                    else f"세금 기준 {r.tax_basis_note}",
                     chip="예상" if r.is_estimated else "")
 
 
@@ -507,15 +512,14 @@ def render_detail() -> None:
     td = dists.get((g.market, g.ticker))
 
     st.markdown(f"### {g.name}")
-    # 차트·뉴스처럼 이 앱이 안 만드는 것은 네이버 증권으로 넘깁니다.
-    # 주소를 못 찾으면 링크를 안 그립니다(빈 페이지로 보내지 않으려고).
-    naver = naver_link_service.url_for(g.market, g.ticker)
+    # 차트·뉴스처럼 이 앱이 안 만드는 것은 증권사 화면으로 넘깁니다.
+    # 만들 수 있는 주소만 옵니다(빈 페이지로 보내지 않으려고).
+    links = link_service.links_for(g.market, g.ticker)
     where = "미국" if g.market == MARKET_US else "한국"
-    if naver:
+    if links:
         st.markdown(
-            f"<span class='note'>{g.ticker} · {where} 상장</span>"
-            f"&nbsp;&nbsp;<a class='chip' href='{naver}' target='_blank' rel='noopener'"
-            f" title='PC·모바일 모두 같은 주소로 열립니다'>Npay증권 ↗</a>",
+            f"<span class='note'>{g.ticker} · {where} 상장</span>&nbsp;&nbsp;"
+            + linkchips(links),
             unsafe_allow_html=True,
         )
     else:
@@ -590,7 +594,8 @@ def render_detail() -> None:
             "운용사가 발표하는 '주당 과세표준액' 입니다. 분배금과 전혀 다른 금액일 수 있습니다.")
     if not td.tax_basis_supported:
         warn("이 종목은 과세표준 자료를 제공하는 소스를 찾지 못했습니다. "
-             "금액을 추측해서 채우지 않고 '자료 없음' 으로 둡니다.")
+             f"금액을 추측해서 채우지 않고 '{config.TAX_BASIS_UNSUPPORTED}' 로 둡니다. "
+             "실제 원천징수 금액은 증권사 거래내역에서 확인하세요.")
     else:
         latest_tb = next((d for d in items if d.tax_basis_per_share is not None), None)
         a, b = st.columns(2)
@@ -612,7 +617,10 @@ def render_detail() -> None:
                 "지급일": F.ymd(d.payment_date),
                 "주당 분배금": F.native_amt(d.distribution_per_share, g.currency),
                 "주당 과세표준액": (F.native_amt(d.tax_basis_per_share, g.currency)
-                              if d.has_tax_basis else "아직 발표 전"),
+                              if d.has_tax_basis
+                              else (config.TAX_BASIS_UNPUBLISHED
+                                    if td.tax_basis_supported
+                                    else config.TAX_BASIS_UNSUPPORTED)),
                 "내 수량 기준": F.won(fx_service.to_krw(
                     d.distribution_per_share * g.total_shares, g.currency, summary.usdkrw)),
             }
@@ -643,12 +651,76 @@ def account_options() -> list[str]:
     return used + extra + base
 
 
+def _reset_amount_inputs() -> None:
+    """수량·평단가만 0 으로 되돌립니다. 증권사·계좌는 그대로 둡니다.
+
+    왜 이렇게 나누나
+    ----------------
+    같은 계좌에 여러 종목을 연달아 넣는 일이 흔합니다. 증권사·계좌는 직전 것을
+    그대로 쓰는 게 편하지만, **수량·평단가가 남아 있으면 앞 종목 숫자를 그대로
+    저장**하게 됩니다(실제로 잘못 눌렀다는 지적을 받았습니다).
+
+    ⚠ Streamlit 은 위젯이 이미 만들어진 뒤에 그 키의 값을 바꾸면 예외를 냅니다.
+       그래서 **위젯을 만들기 전**(render_manage 맨 위)에만 부릅니다.
+    """
+    st.session_state["add_qty"] = 0.0
+    st.session_state["add_price_text"] = ""
+
+
+def _parse_money(text: str) -> float:
+    """사람이 친 금액 문자열 -> 숫자. 콤마·공백·통화기호를 무시합니다."""
+    cleaned = re.sub(r"[^0-9.]", "", str(text or ""))
+    if not cleaned or cleaned == ".":
+        return 0.0
+    try:
+        return float(cleaned)
+    except ValueError:
+        return 0.0
+
+
+def _format_money(text: str) -> str:
+    """사람이 친 그대로를 세 자리 콤마가 붙은 모양으로. 소수점은 친 대로 남깁니다.
+
+    "32000"    -> "32,000"
+    "30.5"     -> "30.5"        (달러 평단가)
+    "1234.567" -> "1,234.567"
+    """
+    cleaned = re.sub(r"[^0-9.]", "", str(text or ""))
+    if not cleaned:
+        return ""
+    whole, dot, frac = cleaned.partition(".")
+    whole = whole.lstrip("0") or "0"
+    try:
+        grouped = f"{int(whole):,}"
+    except ValueError:
+        return cleaned
+    return grouped + (("." + frac) if dot else "")
+
+
+def _on_price_changed() -> None:
+    """평단가 칸을 벗어나거나 엔터를 치면 콤마를 붙여 다시 씁니다."""
+    st.session_state["add_price_text"] = _format_money(
+        st.session_state.get("add_price_text", ""))
+
+
 def render_manage() -> None:
+    # ⚠ 위젯을 만들기 **전에** 초기화해야 합니다. 만든 뒤에 session_state 를
+    #    건드리면 Streamlit 이 예외를 냅니다.
+    if st.session_state.pop("add_reset", False):
+        st.session_state["add_query"] = ""
+        _reset_amount_inputs()
+    # ⚠ 위젯에 value= 를 주면서 session_state 로도 건드리면 Streamlit 이 경고를
+    #    찍습니다. 기본값을 session_state 한 곳에서만 정합니다.
+    st.session_state.setdefault("add_qty", 0.0)
+    st.session_state.setdefault("add_price_text", "")
+
     section("➕ 내 ETF 추가", "다섯 가지만 넣으면 됩니다. 처음 산 날짜는 안 물어봅니다.")
 
     q = st.text_input("어떤 ETF 인가요?",
-                      placeholder="SCHD · 069500 · KODEX 200 처럼 입력하세요",
+                      placeholder="커버 액티 · 코덱스 200 · SCHD · 069500",
                       key="add_query")
+    note("이름을 조각으로 나눠 쳐도 됩니다. 띄어쓰기는 신경 쓰지 않아도 되고, "
+         "조각이 전부 들어간 종목을 찾아 줍니다. 예: `커버 액티`")
     hit = None
     if q:
         hits = search_service.search(q, limit=20)
@@ -658,6 +730,14 @@ def render_manage() -> None:
             labels = {h.label(): h for h in hits}
             picked = st.selectbox("찾은 종목", list(labels.keys()), key="add_pick")
             hit = labels[picked]
+
+    # 고른 종목이 바뀌면 수량·평단가를 0 으로. 앞 종목 숫자를 그대로 저장하는
+    # 사고를 막습니다. (증권사·계좌는 직전 것을 그대로 씁니다)
+    now_key = f"{hit.market}:{hit.ticker}" if hit else ""
+    if st.session_state.get("add_last_pick") != now_key:
+        st.session_state["add_last_pick"] = now_key
+        if now_key:
+            _reset_amount_inputs()
 
     c1, c2 = st.columns(2)
     with c1:
@@ -674,11 +754,17 @@ def render_manage() -> None:
     c3, c4 = st.columns(2)
     with c3:
         qty = st.number_input("몇 주 가지고 있나요?", min_value=0.0, step=1.0,
-                              value=0.0, key="add_qty")
+                              key="add_qty")
     with c4:
         unit = "$" if (hit and hit.market == MARKET_US) else "₩"
-        price = st.number_input(f"평균적으로 얼마에 샀나요? ({unit})", min_value=0.0,
-                                step=1.0, value=0.0, format="%.4f", key="add_price")
+        # ⚠ st.number_input 은 세 자리 콤마를 못 찍습니다(format 이 printf 라
+        #    자릿수 구분 기호가 없습니다). 그래서 글자 칸으로 받고 직접 찍습니다.
+        st.text_input(f"평균적으로 얼마에 샀나요? ({unit})",
+                      key="add_price_text", placeholder="32,000",
+                      on_change=_on_price_changed)
+        price = _parse_money(st.session_state.get("add_price_text", ""))
+        if price > 0:
+            note(f"{unit}{_format_money(str(price))} 로 저장됩니다.")
 
     if st.button("저장", type="primary", disabled=(hit is None or qty <= 0)):
         portfolio.add(Holding(
@@ -693,6 +779,11 @@ def render_manage() -> None:
                 and account not in config.DEFAULT_ACCOUNT_TYPES:
             portfolio.account_types.append(account)
         st.success(f"{hit.name} {qty:g}주를 추가했습니다.")
+        # 다음 종목을 바로 넣을 수 있게 검색어·수량·평단가를 비웁니다.
+        # (증권사·계좌는 직전 것을 그대로 씁니다 — 같은 계좌에 여러 종목을
+        #  넣는 일이 흔합니다). 실제 초기화는 다음 실행 맨 위에서 합니다 —
+        # 위젯이 만들어진 뒤에 값을 바꾸면 Streamlit 이 예외를 냅니다.
+        st.session_state["add_reset"] = True
         st.rerun()
 
     st.write("")
