@@ -72,6 +72,12 @@ import re
 # 각 운용사 CI 에서 고른 색이되, 전술판에서 서로 구분돼야 하므로 겹치는 것은
 # 비틀었습니다. (예: 한화 PLUS 도 원래 주황 계열이라 미래에셋 TIGER 와 겹쳐서
 # 보라로 조정)
+#
+# ⚠ **짙은색끼리 너무 비슷하면 이름표만 보고 운용사를 못 가립니다.**
+#    미국 이름표가 KODEX 남색과 헷갈린다는 지적을 받고 전수 점검했더니,
+#    키움(#7A0A1C)이 ACE(#8C0019)와 거리 21, BNK(#8C4210)가 TIGER(#9E4200)와
+#    거리 24 로 같은 문제를 안고 있었습니다. 둘 다 짙은색만 옮겼습니다
+#    (메인색 = 브랜드 CI 라 그대로 둡니다).
 BRAND_KITS: dict[str, tuple[str, str, str]] = {
     "KODEX":     ("#1428A0", "#0A1660", "#FFFFFF"),   # 삼성자산운용
     "TIGER":     ("#FF6B00", "#9E4200", "#FFFFFF"),   # 미래에셋자산운용
@@ -80,12 +86,12 @@ BRAND_KITS: dict[str, tuple[str, str, str]] = {
     "RISE":      ("#FFC220", "#A37800", "#3A2A00"),   # KB자산운용
     "HANARO":    ("#00A651", "#00642F", "#FFFFFF"),   # NH아문디자산운용
     "PLUS":      ("#6E48AA", "#40296A", "#FFFFFF"),   # 한화자산운용
-    "KOSEF":     ("#C8102E", "#7A0A1C", "#FFFFFF"),   # 키움투자자산운용 (옛 이름)
-    "KIWOOM":    ("#C8102E", "#7A0A1C", "#FFFFFF"),   # 키움투자자산운용 (현재 브랜드)
+    "KOSEF":     ("#C8102E", "#5A0A14", "#FFFFFF"),   # 키움투자자산운용 (옛 이름)
+    "KIWOOM":    ("#C8102E", "#5A0A14", "#FFFFFF"),   # 키움투자자산운용 (현재 브랜드)
     "TIMEFOLIO": ("#2D3A45", "#161E25", "#FFFFFF"),
     "TIME":      ("#2D3A45", "#161E25", "#FFFFFF"),   # 타임폴리오 — 종목명은 "TIME ..." 으로 시작
     "WON":       ("#0072CE", "#004880", "#FFFFFF"),   # 우리자산운용
-    "BNK":       ("#E5711E", "#8C4210", "#FFFFFF"),
+    "BNK":       ("#E5711E", "#7A4A2E", "#FFFFFF"),
     "히어로즈":   ("#7A5C3E", "#463424", "#FFFFFF"),
 }
 
@@ -101,8 +107,18 @@ BRAND_ALIASES: dict[str, str] = {
 DEFAULT_KIT: tuple[str, str, str] = ("#8E99A6", "#4A535C", "#FFFFFF")
 
 # 미국 종목은 브랜드색 대신 "성조기 원정 유니폼"을 입습니다.
-# 흰 몸통 + 빨간 소매 + 가슴에 큰 성조기. 이름표는 남색.
-US_KIT: tuple[str, str, str] = ("#F8F8F4", "#0A2B5C", "#0A2B5C")
+# 흰 몸통 + 빨간 소매 + 가슴에 큰 성조기.
+#
+# ⚠ 이름표를 남색(#0A2B5C)으로 두었다가 **KODEX 남색(#0A1660)과 헷갈린다**는
+#    지적을 받았습니다(두 색 거리 21). 지금은 성조기 빨강(Old Glory Red)에
+#    흰 테두리를 둘러 "빨강+흰색 = 미국" 으로 읽히게 합니다.
+#    이름표 색은 운용사를 뜻하는 자리라, 서로 겹치면 어느 상품인지 못 알아봅니다.
+#    tests/test_pitch_kit.py 가 모든 짝의 색 거리를 재고 있습니다.
+US_KIT: tuple[str, str, str] = ("#F8F8F4", "#B31942", "#0A2B5C")
+# 이름표 바깥 흰 테두리. 지금은 미국 종목만 씁니다(한국 종목은 단색 이름표).
+# ⚠ 아래쪽 흰 "띠" 로 넣었더니 흰 글자의 받침·꼬리가 띠를 파고들어 잘려
+#    보였습니다. 글자에 절대 안 닿는 바깥 테두리로 바꿨습니다.
+US_TAG_BAND: str = "#FFFFFF"
 
 
 # =====================================================================
@@ -317,10 +333,14 @@ def kit_of(market: str, name: str) -> dict:
     """유니폼 색 정보. 미국은 성조기 키트, 한국은 브랜드 키트."""
     if str(market).upper() == "US":
         main, dark, text = US_KIT
-        return {"style": "us", "brand": "", "main": main, "dark": dark, "text": text}
+        # band = 이름표 아래쪽 띠. 미국만 붙여서 빨강 단색 브랜드(ACE·KIWOOM)와
+        # 한눈에 갈리게 합니다.
+        return {"style": "us", "brand": "", "main": main, "dark": dark,
+                "text": text, "band": US_TAG_BAND}
     brand, _ = split_brand(name)
     main, dark, text = BRAND_KITS.get(brand, DEFAULT_KIT)
-    return {"style": "solid", "brand": brand, "main": main, "dark": dark, "text": text}
+    return {"style": "solid", "brand": brand, "main": main, "dark": dark,
+            "text": text, "band": ""}
 
 
 def card_label(market: str, ticker: str, display_name: str, override: str = "") -> str:

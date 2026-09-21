@@ -703,6 +703,29 @@ function jerseySVG(kit, weightPct, uid) {
     '</svg>';
 }
 
+/** 이름표의 흰 테두리 두께(CSS px). 미국 종목만 두릅니다.
+ *
+ *  이름표 색 = **운용사**입니다. 미국 종목은 운용사가 없어서 예전에는 남색을
+ *  줬는데 **KODEX 남색과 헷갈린다**는 지적을 받았습니다. 지금은 성조기 빨강
+ *  (#B31942) 에 흰 테두리를 둘러 "빨강+흰색 = 미국" 으로 읽히게 합니다.
+ *
+ *  ⚠ 처음에는 이름표 **아래쪽에 흰 띠**를 깔았는데, 흰 글자의 받침·꼬리가
+ *     그 띠를 파고들어 글자가 잘려 보였습니다(이름표 높이 15.4px 에서 글리프
+ *     아래끝 13.7px, 20% 띠 시작 12.3px — 1.4px 겹침). 띠를 글자 아래로
+ *     내리면 너무 얇아져서, 글자에 절대 안 닿는 **바깥 테두리**로 바꿨습니다.
+ *  ⚠ `border` 가 아니라 `outline` 입니다. border 는 이름표 높이를 바꿔서
+ *     카드 겹침 계산(tests/test_pitch_layout.py)을 흔듭니다.
+ *  ⚠ box-shadow 로 그리면 `.card.selected .tag` 의 강조 테두리를 덮어씁니다
+ *     (인라인 스타일이 이깁니다).
+ */
+const TAG_RING_PX = 2;
+
+/** 이름표 인라인 스타일. 캡처(canvas)와 **같은 색·같은 두께**여야 합니다. */
+function tagStyle(kit) {
+  return "background:" + escapeHtml(kit.dark) + ";color:" + textOn(kit.dark) +
+    (kit.band ? ";outline:" + TAG_RING_PX + "px solid " + escapeHtml(kit.band) : "");
+}
+
 /** 이름표 글자 크기(px). 전술판 폭에서 계산합니다.
  *
  *  이름표 안쪽 폭 = 카드 폭(전술판의 15%) - 좌우 여백 6px.
@@ -772,7 +795,7 @@ function render() {
       jerseySVG(p.kit, p.weight_pct, uid++) +
       (p.captain ? '<span class="cap" title="지금 가장 많이 들고 있는 종목">C</span>' : '') +
       (p.has_warning ? '<span class="warn" title="확인 필요"></span>' : '') +
-      '<div class="tag" style="background:' + p.kit.dark + ';color:#fff">' +
+      '<div class="tag" style="' + tagStyle(p.kit) + '">' +
         escapeHtml(p.label) + '</div>' +
       '<div class="tip">' + escapeHtml(fullName) + ' · 내 ETF 자산의 ' +
         fmtPct(p.weight_pct) + '</div>';
@@ -1202,12 +1225,22 @@ async function buildPitchCanvas() {
       ctx.fillText("C", capX + capW / 2, capY + capH / 2 + 0.3 * scale);
     }
 
-    // 이름표
+    // 이름표 — 화면(.tag / tagBackground)과 **같은 색·같은 띠 비율**이어야 합니다.
     const tagY = topY + jerseyH + 2 * scale;
+    const tagX = cx - cardW / 2;
     ctx.fillStyle = p.kit.dark;
-    roundRect(ctx, cx - cardW / 2, tagY, cardW, tagH, 4 * scale);
+    roundRect(ctx, tagX, tagY, cardW, tagH, 4 * scale);
     ctx.fill();
-    ctx.fillStyle = "#ffffff";
+    if (p.kit.band) {
+      // 미국 종목: 흰 테두리 (성조기). 화면의 outline 은 상자 **바깥**에
+      // 그려지므로, 선 가운데가 경계 + 두께/2 에 오도록 사각형을 넓힙니다.
+      const o = TAG_RING_PX * scale;
+      ctx.strokeStyle = p.kit.band;
+      ctx.lineWidth = o;
+      roundRect(ctx, tagX - o / 2, tagY - o / 2, cardW + o, tagH + o, 4 * scale + o / 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = textOn(p.kit.dark);
     ctx.font = `bold ${tagFs}px ${FONT}`;           // 화면 .tag 와 같은 크기
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(fitText(ctx, p.label, cardW - 6 * scale), cx, tagY + tagH / 2 + 0.5 * scale);
