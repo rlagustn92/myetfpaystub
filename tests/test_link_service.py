@@ -27,10 +27,17 @@ def test_toss_korean_address_uses_the_krx_short_code():
     assert link_service.toss_url(MARKET_KR, "0219E0").endswith("/A0219E0")
 
 
-def test_toss_has_no_address_for_us_stocks():
-    """추측하면 빈 페이지로 보냅니다. /stocks/SCHD · /stocks/{ISIN} ·
-    /us-stocks/SCHD 를 전부 열어 봤지만 종목 화면이 안 나왔습니다."""
-    assert link_service.toss_url(MARKET_US, "SCHD") is None
+def test_toss_us_address_is_just_the_ticker():
+    """확인: SCHD · JEPI · O(한 글자) 전부 종목 화면이 뜹니다.
+
+    ⚠ 한때 이 주소가 "안 된다" 고 잘못 판단한 적이 있습니다. 토스는 SPA 라
+    페이지를 **열자마자 읽으면 홈 화면 메뉴만** 보입니다. 몇 초 기다려야
+    종목 화면이 그려집니다.
+    """
+    assert link_service.toss_url(MARKET_US, "SCHD") ==         "https://www.tossinvest.com/stocks/SCHD"
+    assert link_service.toss_url(MARKET_US, "o").endswith("/stocks/O")
+    # 이상한 글자가 들어와도 주소를 깨뜨리지 않습니다
+    assert link_service.toss_url(MARKET_US, "A B").endswith("/stocks/A%20B")
 
 
 def test_yahoo_uses_ks_for_kospi_and_kq_for_kosdaq(monkeypatch):
@@ -61,18 +68,15 @@ def test_empty_ticker_makes_no_link(bad):
     assert link_service.yahoo_url(MARKET_US, bad) is None
 
 
-def test_korean_gets_three_links_and_us_gets_two(monkeypatch):
-    """미국에 토스가 없는 것은 **의도한 것**입니다. 네이버·야후가 덮습니다."""
+def test_both_markets_get_all_three_links(monkeypatch):
     monkeypatch.setattr(link_service.naver_link_service, "url_for",
                         lambda m, t: "https://m.stock.naver.com/x")
     monkeypatch.setattr(link_service.search_service, "kr_exchange",
                         lambda code: "KOSPI")
 
-    kr = dict(link_service.links_for(MARKET_KR, "069500"))
-    assert set(kr) == {"Npay증권", "토스증권", "야후파이낸스"}
-
-    us = dict(link_service.links_for(MARKET_US, "SCHD"))
-    assert set(us) == {"Npay증권", "야후파이낸스"}
+    want = {"Npay증권", "토스증권", "야후파이낸스"}
+    assert set(dict(link_service.links_for(MARKET_KR, "069500"))) == want
+    assert set(dict(link_service.links_for(MARKET_US, "SCHD"))) == want
 
 
 def test_a_source_that_fails_is_simply_left_out(monkeypatch):
