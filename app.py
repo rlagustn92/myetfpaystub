@@ -42,6 +42,7 @@ from components.ui import (
     warn,
 )
 from data.providers import cache
+from data.providers.issuer import base as issuer_base
 from models.portfolio import MARKET_KR, MARKET_US, Holding
 from services import (
     cashflow_service as CF,
@@ -271,6 +272,25 @@ def render_home() -> None:
 # =====================================================================
 # 5-1. 전술판 — 내가 가진 걸 한 장의 그림으로
 # =====================================================================
+def is_admin() -> bool:
+    """관리자(= 앱 주인)인가. 전체에 영향을 주는 기능을 가립니다.
+
+    주소 뒤에 `?admin=<키>` 를 붙였을 때만 True. 키는 secrets 의 `ADMIN_KEY`
+    와 비교합니다. **로그인이 아니라 "남이 실수로 못 누르게" 하는 가림막**입니다.
+
+    ⚠ `ADMIN_KEY` 를 안 넣으면 항상 관리자로 봅니다(개인 PC 에서 혼자 쓸 때).
+       배포본에서 가리려면 Streamlit Cloud 의 Secrets 에 키를 넣어야 합니다.
+    ⚠ 키를 **코드에 적으면 안 됩니다.** 저장소가 공개라 그대로 노출됩니다.
+    """
+    try:
+        expected = str(st.secrets.get("ADMIN_KEY", "") or "")
+    except Exception:  # noqa: BLE001 - secrets 파일이 없어도 로컬에서 돌아야 합니다
+        expected = ""
+    if not expected:
+        return True
+    return st.query_params.get(config.ADMIN_QUERY_KEY) == expected
+
+
 def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None:
     """축구 전술판 위에 내 보유 ETF 를 세웁니다.
 
@@ -984,10 +1004,23 @@ with c1:
     stamps.append(f"마지막 계산 {config.now_local():%Y.%m.%d %H:%M} {config.TIMEZONE_LABEL}")
     note(" · ".join(stamps))
 with c2:
-    if st.button("🔄 정보 업데이트", width="stretch",
-                 help="가격·환율·분배금·과세표준을 새로 받아옵니다."):
-        cache.invalidate()
-        st.rerun()
+    # ⚠ 캐시는 **모든 접속자가 함께 씁니다.** 한 사람이 누르면 그 순간 모든
+    #    종목을 다시 받아오고, 여러 명이 번갈아 누르면 운용사 서버가 우리를
+    #    막습니다. 그래서 주소에 ?admin=<키> 를 붙인 사람만 누를 수 있습니다.
+    if is_admin():
+        if st.button("🔄 정보 업데이트", width="stretch",
+                     help="가격·환율·분배금·과세표준 캐시를 비우고 새로 받아옵니다. "
+                          "(관리자 전용)"):
+            n = cache.invalidate()
+            st.success(f"저장해 둔 자료 {n}건을 비웠습니다. 다시 받아옵니다.")
+            st.rerun()
+        used = issuer_base.calls_today()
+        note(f"오늘 운용사 자료 조회 {used}회 / 한도 {config.ISSUER_DAILY_CALL_BUDGET}회 "
+             f"(서버가 다시 켜지면 0부터 셉니다)")
+    else:
+        note(f"시세와 분배금은 자동으로 새로 받아옵니다 "
+             f"(가격 {config.CACHE_TTL_LATEST_PRICE_SECONDS // 60}분 · "
+             f"분배금 {config.CACHE_TTL_DISTRIBUTION_SECONDS // 3600}시간 주기).")
 
 # =====================================================================
 # 11. 브라우저 저장소에 쓰기 — ⚠ 반드시 맨 아래

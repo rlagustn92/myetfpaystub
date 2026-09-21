@@ -28,6 +28,54 @@ from models.distribution import DistributionSeries
 
 
 # ---------------------------------------------------------------------
+# 하루 호출 한도 — 운용사 서버에 대한 예의
+# ---------------------------------------------------------------------
+# 왜 필요한가
+# -----------
+# 캐시는 **모든 접속자가 함께 씁니다.** 그래서 코드 실수로 반복 호출이 생기거나
+# 접속이 몰리면, 운용사 한 곳을 짧은 시간에 수백 번 두드리게 됩니다. 실제로
+# 개발 중에 삼성자산운용 API 가 한동안 `{"dividList":[],"totalCnt":0}` 만
+# 돌려준 적이 있습니다 — HTTP 200 에 정상 JSON 인데 내용만 비어서, **에러도
+# 안 나고** 앱이 조용히 폴백으로 내려가 과세표준이 전부 사라졌습니다.
+#
+# 그래서 남이 우리를 막기 전에 **우리가 먼저 멈춥니다.**
+#
+# ⚠ 이건 프로세스 안에서만 셉니다. 서버가 재시작되면 0 부터 다시 셉니다.
+#    완벽한 한도가 아니라 **폭주를 끊는 안전장치**입니다. 정확한 한도가
+#    필요해지면 외부 저장소가 있어야 합니다.
+_call_counts: dict[str, int] = {}
+
+
+def calls_today() -> int:
+    """오늘(한국 날짜) 이 프로세스가 운용사 서버를 부른 횟수."""
+    return _call_counts.get(config.today_local().isoformat(), 0)
+
+
+def budget_left() -> int:
+    return max(0, config.ISSUER_DAILY_CALL_BUDGET - calls_today())
+
+
+def reset_calls() -> None:
+    """테스트용. 앱에서는 부르지 않습니다."""
+    _call_counts.clear()
+
+
+def _spend_one_call() -> None:
+    """한 번 쓰고 셉니다. 한도를 넘으면 아예 부르지 않고 막습니다."""
+    key = config.today_local().isoformat()
+    used = _call_counts.get(key, 0)
+    if used >= config.ISSUER_DAILY_CALL_BUDGET:
+        raise DataUnavailable(
+            f"오늘 운용사 자료 조회 한도({config.ISSUER_DAILY_CALL_BUDGET}회)를 "
+            f"다 썼습니다. 내일 다시 받아옵니다."
+        )
+    # 날짜가 바뀌면 옛 날짜 칸은 필요 없습니다(메모리에 쌓이지 않게).
+    if key not in _call_counts:
+        _call_counts.clear()
+    _call_counts[key] = used + 1
+
+
+# ---------------------------------------------------------------------
 # 공통 HTTP
 # ---------------------------------------------------------------------
 def http_get(url: str, *, params: dict | None = None, referer: str = "",
@@ -36,6 +84,7 @@ def http_get(url: str, *, params: dict | None = None, referer: str = "",
 
     위층이 폴백을 깔끔하게 하려면 올라오는 예외가 한 종류여야 합니다.
     """
+    _spend_one_call()
     h = {"User-Agent": config.HTTP_USER_AGENT, "Accept": "application/json, text/html, */*"}
     if referer:
         h["Referer"] = referer
@@ -53,6 +102,7 @@ def http_get(url: str, *, params: dict | None = None, referer: str = "",
 
 def http_post(url: str, *, data: dict, referer: str = "",
               headers: dict | None = None, timeout: float | None = None) -> requests.Response:
+    _spend_one_call()
     h = {"User-Agent": config.HTTP_USER_AGENT, "X-Requested-With": "XMLHttpRequest"}
     if referer:
         h["Referer"] = referer
