@@ -9,7 +9,9 @@
     --turf-a: #2f8f3f; --turf-b: #2b8639;
     --frame-a: #1f6f3a; --frame-b: #1f6f3a;
     --accent: #ffcf33;
+    --stand: transparent;   /* 관중석(판 바깥) */
   }
+  body { background: var(--stand); }
   * { box-sizing: border-box; }
   /* overflow:hidden -- 이 iframe 은 내용 높이에 딱 맞춰 잡히므로 스스로 스크롤될 일이
      없습니다. 1px 이라도 넘쳐 스크롤 가능해지면, 전술판 위에서 휠을 돌릴 때 휠 이벤트를
@@ -48,6 +50,8 @@
     position: relative; width: 100%; margin: 0 auto; border-radius: 12px; overflow: hidden;
     /* 잔디 줄무늬: 화면 전체 크기의 큰 그라디언트 하나를 매번 다시 그리는 대신,
        작은 타일 하나를 반복해서 깝니다 (스크롤 중 다시 칠하는 비용이 줄어듭니다). */
+    /* 깎기 무늬는 JS(applySkin)가 background-image/size 를 통째로 갈아끼웁니다.
+       여기 값은 스킨이 없을 때의 기본입니다. */
     background-image: linear-gradient(0deg, var(--turf-a) 50%, var(--turf-b) 50%);
     background-size: 100% 14.4%;
     box-shadow: inset 0 0 0 2px rgba(0,0,0,0.15);
@@ -412,6 +416,33 @@ function drawTaegeuk(ctx, cx, cy, r, ring) {
 }
 
 /** 화면용 유니폼 SVG 문자열. uid 는 clipPath id 충돌을 막기 위한 것. */
+/** 몸통 위에 덧입히는 무늬 (SVG).
+ *
+ *  ⚠ 몸통 **바탕색은 절대 안 덮습니다.** 바탕색이 곧 운용사라서, 다 덮으면
+ *  어느 운용사 상품인지 알 수 없게 됩니다. 무늬는 절반쯤만 가립니다.
+ */
+function patternSVG(kind, color) {
+  if (!kind || kind === "plain" || !color) return "";
+  const c = escapeHtml(color);
+  if (kind === "stripes") {   // 세로줄 3개 (바탕이 절반 이상 남습니다)
+    return '<rect x="8"  y="0" width="13" height="118" fill="' + c + '"/>' +
+           '<rect x="43" y="0" width="13" height="118" fill="' + c + '"/>' +
+           '<rect x="78" y="0" width="13" height="118" fill="' + c + '"/>';
+  }
+  if (kind === "hoops") {     // 가로줄
+    return '<rect x="0" y="16" width="100" height="13" fill="' + c + '"/>' +
+           '<rect x="0" y="46" width="100" height="13" fill="' + c + '"/>' +
+           '<rect x="0" y="76" width="100" height="13" fill="' + c + '"/>';
+  }
+  if (kind === "center") {    // 가운데 세로 넓은 띠
+    return '<rect x="38" y="0" width="24" height="118" fill="' + c + '"/>';
+  }
+  if (kind === "sash") {      // 어깨에서 허리로 내려오는 대각 띠
+    return '<path d="M0 18 L82 118 L100 118 L100 96 L22 0 L0 0 Z" fill="' + c + '"/>';
+  }
+  return "";
+}
+
 function jerseySVG(kit, weightPct, uid) {
   const num = fmtNum(weightPct);
   const fit = fitNumber(num, "%");
@@ -421,12 +452,25 @@ function jerseySVG(kit, weightPct, uid) {
       '<rect x="0" y="0" width="100" height="118" fill="' + US_BODY + '"/>' +
       '<rect x="0" y="0" width="24" height="40" fill="' + US_RED + '"/>' +
       '<rect x="76" y="0" width="24" height="40" fill="' + US_RED + '"/>' +
-      '<path d="' + COLLAR_PATH + '" fill="' + US_NAVY + '"/>' +
+      // 미국 카드는 빨간 소매 + 가슴 성조기가 "미국 상장" 표시라 건드리지 않습니다.
+      // 깃 색만 스킨을 따릅니다.
+      '<path d="' + COLLAR_PATH + '" fill="' +
+        escapeHtml((skin && skin.trim) || US_NAVY) + '"/>' +
       usFlagSVG(FLAG.x, FLAG.y, FLAG.w, FLAG.h, FLAG_SPEC.chest);
     numFill = US_NAVY;
   } else {
+    // 바탕 = 운용사 색(정보) -> 무늬 -> 소매 -> 깃 -> 태극(한국 종목 표시) 순으로 쌓습니다.
+    const sk = skin || {};
     inner = '<rect x="0" y="0" width="100" height="118" fill="' + kit.main + '"/>' +
-            // 목 바로 아래 한가운데에 태극 (사용자 요청)
+            patternSVG(sk.pattern, sk.patternColor) +
+            (sk.sleeve
+              ? '<rect x="0" y="0" width="24" height="40" fill="' + escapeHtml(sk.sleeve) + '"/>' +
+                '<rect x="76" y="0" width="24" height="40" fill="' + escapeHtml(sk.sleeve) + '"/>'
+              : '') +
+            (sk.trim
+              ? '<path d="' + COLLAR_PATH + '" fill="' + escapeHtml(sk.trim) + '"/>'
+              : '') +
+            // 목 바로 아래 한가운데에 태극 (= 한국 종목. 무늬 위에 얹어 항상 보이게)
             taegeukSVG(50, TAEGEUK_Y, TAEGEUK_R);
     numFill = kit.text;
     if (kit.brand) {
@@ -441,7 +485,11 @@ function jerseySVG(kit, weightPct, uid) {
     brandTag +
     // text-anchor:middle 로 두면 "숫자+%" 묶음이 가운데 정렬되면서 숫자가 왼쪽으로
     // 밀립니다. 시작점을 직접 계산해 왼쪽 정렬로 찍습니다.
+    // 무늬(줄무늬) 위에 숫자가 걸치면 안 읽힙니다. 몸통색으로 후광을 둘러
+    // 어떤 무늬 위에서도 읽히게 합니다. paint-order 로 테두리를 먼저 칠합니다.
     '<text x="' + (50 - fit.width / 2).toFixed(2) + '" y="98" font-weight="700" ' +
+      'stroke="' + (kit.style === "us" ? US_BODY : kit.main) + '" stroke-width="3.2" ' +
+      'stroke-linejoin="round" paint-order="stroke" ' +
       'fill="' + numFill + '">' +
       '<tspan font-size="' + fit.fs + '">' + escapeHtml(num) + '</tspan>' +
       '<tspan font-size="' + fit.ps + '">%</tspan></text>' +
@@ -612,6 +660,23 @@ const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", ' +
              '"Malgun Gothic", "Apple SD Gothic Neo", Roboto, sans-serif';
 
 /** canvas 에 유니폼 한 벌. (cx, topY) 기준, 폭 w. SVG 와 같은 도형입니다. */
+/** 몸통 무늬 (캔버스). 화면의 patternSVG 와 **같은 좌표**여야 합니다 —
+ *  어긋나면 화면과 캡처 이미지의 유니폼이 달라 보입니다. */
+function drawPattern(ctx, kind, color) {
+  if (!kind || kind === "plain" || !color) return;
+  ctx.fillStyle = color;
+  if (kind === "stripes") {
+    ctx.fillRect(8, 0, 13, 118); ctx.fillRect(43, 0, 13, 118); ctx.fillRect(78, 0, 13, 118);
+  } else if (kind === "hoops") {
+    ctx.fillRect(0, 16, 100, 13); ctx.fillRect(0, 46, 100, 13); ctx.fillRect(0, 76, 100, 13);
+  } else if (kind === "center") {
+    ctx.fillRect(38, 0, 24, 118);
+  } else if (kind === "sash") {
+    const p = new Path2D("M0 18 L82 118 L100 118 L100 96 L22 0 L0 0 Z");
+    ctx.fill(p);
+  }
+}
+
 function drawJersey(ctx, cx, topY, w, kit, weightPct) {
   const k = w / 100;
   ctx.save();
@@ -625,11 +690,18 @@ function drawJersey(ctx, cx, topY, w, kit, weightPct) {
   if (kit.style === "us") {
     ctx.fillStyle = US_BODY; ctx.fillRect(0, 0, 100, 118);
     ctx.fillStyle = US_RED;  ctx.fillRect(0, 0, 24, 40); ctx.fillRect(76, 0, 24, 40);
-    ctx.fillStyle = US_NAVY; ctx.fill(new Path2D(COLLAR_PATH));
+    ctx.fillStyle = (skin && skin.trim) || US_NAVY; ctx.fill(new Path2D(COLLAR_PATH));
     drawUSFlag(ctx, FLAG.x, FLAG.y, FLAG.w, FLAG.h, FLAG_SPEC.chest, 1.4);
     numFill = US_NAVY;
   } else {
+    const sk = skin || {};
     ctx.fillStyle = kit.main; ctx.fillRect(0, 0, 100, 118);
+    drawPattern(ctx, sk.pattern, sk.patternColor);
+    if (sk.sleeve) {
+      ctx.fillStyle = sk.sleeve;
+      ctx.fillRect(0, 0, 24, 40); ctx.fillRect(76, 0, 24, 40);
+    }
+    if (sk.trim) { ctx.fillStyle = sk.trim; ctx.fill(new Path2D(COLLAR_PATH)); }
     drawTaegeuk(ctx, 50, TAEGEUK_Y, TAEGEUK_R);
     numFill = kit.text;
   }
@@ -650,10 +722,16 @@ function drawJersey(ctx, cx, topY, w, kit, weightPct) {
   const fit = fitNumber(numTxt, "%");
   const startX = 50 - fit.width / 2;
   ctx.textAlign = "left";
+  // 화면(jerseySVG)과 같은 후광. 무늬 위에서도 숫자가 읽히게 합니다.
+  ctx.lineWidth = 3.2;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = (kit.style === "us") ? US_BODY : kit.main;
   ctx.fillStyle = numFill;
   ctx.font = `bold ${fit.fs}px ${FONT}`;
+  ctx.strokeText(numTxt, startX, 98);
   ctx.fillText(numTxt, startX, 98);
   ctx.font = `bold ${fit.ps}px ${FONT}`;
+  ctx.strokeText("%", startX + fit.numWidth, 98);
   ctx.fillText("%", startX + fit.numWidth, 98);
   ctx.textAlign = "center";
 
@@ -723,13 +801,44 @@ async function buildPitchCanvas() {
     ctx.fillRect(x, barPx + pitchH, w, framePx);               // 아래
   }
 
-  // 잔디 스트라이프
-  const stripeH = pitchH * 0.072;
-  let i = 0;
-  for (let y = barPx; y < barPx + pitchH; y += stripeH, i++) {
-    ctx.fillStyle = (i % 2 === 0) ? turfA : turfB;
-    ctx.fillRect(0, y, W, Math.min(stripeH, barPx + pitchH - y));
+  // 잔디 깎기 무늬 — 화면(applySkin)과 **같은 무늬**여야 합니다.
+  // 여기만 가로띠로 두면 캡처 이미지에서 체크·대각 스킨이 사라져 보입니다.
+  const mow = (skin && skin.mow) || "bands";
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, barPx, W, pitchH); ctx.clip();
+  if (mow === "vertical") {
+    const sw = W * 0.125;
+    for (let x = 0, i = 0; x < W; x += sw, i++) {
+      ctx.fillStyle = (i % 2 === 0) ? turfA : turfB;
+      ctx.fillRect(x, barPx, Math.min(sw, W - x), pitchH);
+    }
+  } else if (mow === "diagonal") {
+    const sw = 22 * scale;
+    ctx.fillStyle = turfA; ctx.fillRect(0, barPx, W, pitchH);
+    ctx.fillStyle = turfB;
+    ctx.translate(0, barPx);
+    for (let d = -pitchH; d < W + pitchH; d += sw * 2) {
+      ctx.beginPath();
+      ctx.moveTo(d, 0); ctx.lineTo(d + sw, 0);
+      ctx.lineTo(d + sw + pitchH, pitchH); ctx.lineTo(d + pitchH, pitchH);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.translate(0, -barPx);
+  } else {
+    const stripeH = pitchH * 0.072;
+    for (let y = barPx, i = 0; y < barPx + pitchH; y += stripeH, i++) {
+      ctx.fillStyle = (i % 2 === 0) ? turfA : turfB;
+      ctx.fillRect(0, y, W, Math.min(stripeH, barPx + pitchH - y));
+    }
+    if (mow === "checks") {          // 가로띠 위에 세로 명암을 겹칩니다
+      const cw = W * 0.25;
+      for (let x = 0, i = 0; x < W; x += cw, i++) {
+        ctx.fillStyle = (i % 2 === 0) ? "rgba(255,255,255,0.055)" : "rgba(0,0,0,0.045)";
+        ctx.fillRect(x, barPx, Math.min(cw, W - x), pitchH);
+      }
+    }
   }
+  ctx.restore();
 
   // 라인(SVG)을 이미지로 변환해 그대로 그려넣기.
   // svg 의 stroke/fill 은 CSS 변수(var(--line))를 쓰는데, 이 SVG 를 문자열로 뽑아
@@ -871,7 +980,10 @@ async function buildPitchCanvas() {
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillStyle = "rgba(15,42,68,0.50)";
     ctx.font = `${10 * scale}px ${FONT}`;
-    ctx.fillText(footer, W / 2, y + footH / 2 + 2 * scale);
+    // 스킨 이름을 같이 새깁니다. 공유된 이미지를 본 사람이 "저 경기장 뭐야" 를
+    // 물어볼 수 있어야 스킨이 사람을 데려옵니다.
+    const skinName = (skin && skin.name) ? `  ·  ${skin.name}` : "";
+    ctx.fillText(footer + skinName, W / 2, y + footH / 2 + 2 * scale);
   }
 
   return canvas;
@@ -1013,6 +1125,29 @@ function applySkin(sk) {
   set("--frame-a", sk.frameA);
   set("--frame-b", sk.frameB);
   set("--accent", sk.accent);
+  set("--stand", sk.stand);
+
+  // 잔디 깎기 무늬. 실제 구장처럼 무늬가 달라지면 판 전체가 확 달라 보입니다.
+  const a = sk.turfA || "#2f8f3f", b = sk.turfB || "#2b8639";
+  const p = document.getElementById("pitch");
+  const mow = sk.mow || "bands";
+  if (mow === "vertical") {
+    p.style.backgroundImage = `linear-gradient(90deg, ${a} 50%, ${b} 50%)`;
+    p.style.backgroundSize = "12.5% 100%";
+  } else if (mow === "checks") {
+    // 체크: 가로띠와 세로띠를 겹쳐 깝니다. 위 칸은 반투명이라 아래 색과 섞입니다.
+    p.style.backgroundImage =
+      `linear-gradient(90deg, rgba(255,255,255,.055) 50%, rgba(0,0,0,.045) 50%),` +
+      `linear-gradient(0deg, ${a} 50%, ${b} 50%)`;
+    p.style.backgroundSize = "25% 100%, 100% 14.4%";
+  } else if (mow === "diagonal") {
+    p.style.backgroundImage =
+      `repeating-linear-gradient(45deg, ${a} 0 22px, ${b} 22px 44px)`;
+    p.style.backgroundSize = "auto";
+  } else {
+    p.style.backgroundImage = `linear-gradient(0deg, ${a} 50%, ${b} 50%)`;
+    p.style.backgroundSize = "100% 14.4%";
+  }
 }
 
 Streamlit.onRender((args) => {

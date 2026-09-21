@@ -63,12 +63,42 @@ def test_no_real_club_names_or_nicknames():
     assert not hits, f"구단명/별칭이 들어갔습니다: {hits}"
 
 
+@pytest.mark.parametrize("skin", skins.SKINS, ids=lambda s: s.id)
+def test_mow_and_pattern_are_values_the_frontend_knows(skin):
+    """프론트엔드가 모르는 값이면 **조용히 기본 무늬로 떨어집니다.** 에러가 안 납니다."""
+    assert skin.mow in skins.MOWS, f"{skin.id}.mow={skin.mow}"
+    assert skin.pattern in skins.PATTERNS, f"{skin.id}.pattern={skin.pattern}"
+
+
+@pytest.mark.parametrize("skin", skins.SKINS, ids=lambda s: s.id)
+def test_patterned_skins_have_a_pattern_colour(skin):
+    """무늬는 있는데 색이 없으면 아무것도 안 그려집니다."""
+    if skin.pattern != "plain":
+        assert skin.pattern_color or skin.sleeve, f"{skin.id}"
+
+
+@pytest.mark.parametrize("skin", skins.SKINS[1:], ids=lambda s: s.id)
+def test_club_skins_dress_the_team(skin):
+    """기본 잔디 말고는 소매·깃이 있어야 카드가 눈에 띄게 달라집니다."""
+    assert HEX.match(skin.sleeve), f"{skin.id}.sleeve"
+    assert HEX.match(skin.trim), f"{skin.id}.trim"
+    assert HEX.match(skin.stand), f"{skin.id}.stand"
+
+
 def test_to_dict_uses_the_keys_the_frontend_reads():
     """프론트엔드(index.html 의 applySkin)가 읽는 키와 어긋나면
     스킨이 **조용히 적용되지 않습니다.** 에러도 안 납니다."""
     d = skins.get("london-red").to_dict()
-    assert set(d) >= {"turfA", "turfB", "line", "slot", "frameA", "frameB", "accent"}
+    assert set(d) >= {"turfA", "turfB", "mow", "line", "slot", "frameA", "frameB",
+                      "stand", "accent", "sleeve", "trim", "pattern", "patternColor"}
     assert d["frameA"] == skins.get("london-red").frame_a
+    assert d["sleeve"] == "#FFFFFF"          # 붉은 몸통에 흰 소매
+
+
+def test_pattern_colour_falls_back_to_the_sleeve():
+    """patternColor 를 안 적어도 소매 색으로 그려집니다(빈 값이면 아무것도 안 나옵니다)."""
+    d = skins.get("london-red").to_dict()
+    assert d["patternColor"]
 
 
 def test_unknown_id_falls_back_to_the_default_grass():
@@ -124,8 +154,24 @@ def test_everything_is_unlocked_for_now():
     assert all(skin_service.is_unlocked(p, s.id) for s in skins.SKINS)
 
 
-def test_skin_does_not_touch_jersey_colours():
-    """유니폼 색은 운용사 브랜드를 나타내는 **정보**입니다.
-    스킨이 유니폼까지 바꾸면 어느 운용사 상품인지 못 알아봅니다."""
-    d = skins.get("ruhr-yellow").to_dict()
-    assert not any("kit" in k.lower() or "jersey" in k.lower() for k in d)
+def test_skin_never_touches_the_jersey_body_colour():
+    """몸통 바탕색 = 운용사 브랜드(정보). 스킨이 이걸 바꾸면 어느 운용사 상품인지
+    알 수 없게 됩니다. 소매·깃·무늬만 건드립니다."""
+    for sk in skins.SKINS:
+        d = sk.to_dict()
+        # 몸통색을 뜻하는 키가 아예 없어야 합니다 (kit.main 은 pitch_kit 이 정합니다)
+        assert not any(k in d for k in ("main", "body", "kitMain", "bodyColor"))
+    # 소매·깃·무늬는 있어야 스킨이 티가 납니다
+    assert skins.get("tyneside-stripes").pattern == "stripes"
+    assert skins.get("glasgow-hoops").pattern == "hoops"
+
+
+def test_mow_patterns_are_actually_varied():
+    """스킨 21벌이 전부 같은 잔디 무늬면 '경기장이 바뀐다' 는 말이 무색합니다."""
+    used = {s.mow for s in skins.SKINS}
+    assert len(used) >= 3, used
+
+
+def test_patterns_are_actually_varied():
+    used = {s.pattern for s in skins.SKINS}
+    assert len(used) >= 3, used
