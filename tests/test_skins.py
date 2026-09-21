@@ -77,6 +77,41 @@ def test_patterned_skins_have_a_pattern_colour(skin):
         assert skin.pattern_color or skin.sleeve, f"{skin.id}"
 
 
+@pytest.mark.parametrize("skin", skins.SKINS, ids=lambda s: s.id)
+def test_hose_is_pure_team_colour(skin):
+    """반바지·양말은 **전부 팀 색**이어야 합니다.
+
+    한 곳이라도 비워 두면 프론트엔드가 운용사 색(kit.dark)으로 떨어지고, 그러면
+    카드마다 하의가 달라져서 한 팀으로 안 보입니다. 실제로 그래서 "축구팀 같지
+    않다" 는 지적을 받았습니다.
+    """
+    assert HEX.match(skin.shorts), f"{skin.id}.shorts 가 비었습니다"
+    assert HEX.match(skin.socks), f"{skin.id}.socks 가 비었습니다"
+    if skin.sock_band:
+        assert HEX.match(skin.sock_band), f"{skin.id}.sock_band"
+
+
+@pytest.mark.parametrize("skin", skins.SKINS, ids=lambda s: s.id)
+def test_every_skin_has_a_chant(skin):
+    """골대 뒤 배너 글자. 영어 스킨 이름을 적었더니 팀이 전혀 연상되지 않아서
+    그 나라 말 응원 구호로 바꿨습니다."""
+    assert skin.chant.strip(), f"{skin.id} 응원 구호가 없습니다"
+
+
+def test_chants_avoid_club_slogans_and_songs():
+    """지명 + 일반 응원어는 괜찮지만, **구단 공식 슬로건·응원가 제목·별칭**은
+    등록상표이거나 저작물입니다. 실수로 들어가는 것을 막습니다."""
+    banned = [
+        "hala madrid", "mia san mia", "you'll never walk alone", "ynwa",
+        "glory glory", "blue moon", "blue is the colour", "carefree",
+        "visca", "forever blowing bubbles", "on me head", "red army",
+        "i am from tottenham", "we are the pride",
+    ]
+    blob = " ".join(s.chant for s in skins.SKINS).lower()
+    hits = [w for w in banned if w in blob]
+    assert not hits, f"구단 슬로건/응원가가 들어갔습니다: {hits}"
+
+
 @pytest.mark.parametrize("skin", skins.SKINS[1:], ids=lambda s: s.id)
 def test_club_skins_dress_the_team(skin):
     """기본 잔디 말고는 소매·깃이 있어야 카드가 눈에 띄게 달라집니다."""
@@ -90,7 +125,8 @@ def test_to_dict_uses_the_keys_the_frontend_reads():
     스킨이 **조용히 적용되지 않습니다.** 에러도 안 납니다."""
     d = skins.get("london-red").to_dict()
     assert set(d) >= {"turfA", "turfB", "mow", "line", "slot", "frameA", "frameB",
-                      "stand", "accent", "sleeve", "trim", "pattern", "patternColor"}
+                      "stand", "accent", "sleeve", "trim", "pattern", "patternColor",
+                      "shorts", "socks", "sockBand", "chant"}
     assert d["frameA"] == skins.get("london-red").frame_a
     assert d["sleeve"] == "#FFFFFF"          # 붉은 몸통에 흰 소매
 
@@ -161,6 +197,8 @@ def test_skin_never_touches_the_jersey_body_colour():
         d = sk.to_dict()
         # 몸통색을 뜻하는 키가 아예 없어야 합니다 (kit.main 은 pitch_kit 이 정합니다)
         assert not any(k in d for k in ("main", "body", "kitMain", "bodyColor"))
+        # 하의에도 운용사 색이 새어 들어가면 안 됩니다
+        assert d["shorts"] and d["socks"]
     # 소매·깃·무늬는 있어야 스킨이 티가 납니다
     assert skins.get("tyneside-stripes").pattern == "stripes"
     assert skins.get("glasgow-hoops").pattern == "hoops"

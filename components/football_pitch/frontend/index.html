@@ -470,24 +470,42 @@ function patternSVG(kind, color) {
   return "";
 }
 
+/** 하의 테두리 색.
+ *
+ *  ⚠ 예전에는 유니폼 테두리색(kit.dark = 운용사 색)을 썼습니다. 그래서 채움색은
+ *  같은 팀 색인데 **카드마다 테두리가 달라** 한 팀으로 안 보였습니다.
+ *  밝은 하의에는 어두운 선, 어두운 하의에는 밝은 선을 둘러 모든 카드가 똑같아집니다.
+ */
+function outlineFor(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+  if (!m) return "rgba(0,0,0,0.38)";
+  const n = parseInt(m[1], 16);
+  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum > 0.55 ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.40)";
+}
+
 /** 반바지 + 양말 (SVG).
  *
- *  반바지 = 소매 색, 양말 = 깃 색. 스킨이 없으면 유니폼 테두리색(kit.dark)을 써서
- *  한 벌처럼 보이게 합니다. 양말 중간 띠만 몸통색(= 운용사)을 살짝 넣어,
- *  카드를 멀리서 봐도 어느 운용사인지 한 번 더 보이게 했습니다.
+ *  **전부 팀 색입니다.** 몸통(= 운용사)에서 아무것도 끌어오지 않습니다.
+ *  하의 한 곳이라도 운용사 색을 쓰면 카드마다 달라져서 한 팀으로 안 보입니다.
+ *  색은 실제 그 팀의 상의-반바지-양말 조합을 그대로 씁니다(components/skins.py).
  */
 function hoseSVG(kit, sk) {
   const s = sk || {};
-  const shortC = escapeHtml(s.sleeve || kit.dark);
-  const sockC = escapeHtml(s.trim || kit.dark);
-  const bodyC = (kit.style === "us") ? US_BODY : kit.main;
+  const shortC = escapeHtml(s.shorts || kit.dark);
+  const sockC = escapeHtml(s.socks || kit.dark);
+  const bandC = s.sockBand ? escapeHtml(s.sockBand) : "";
+  const shortLine = outlineFor(s.shorts || kit.dark);
+  const sockLine = outlineFor(s.socks || kit.dark);
   const sock = (x) =>
     '<rect x="' + x + '" y="' + SOCK.y + '" width="' + SOCK.w + '" height="' + SOCK.h +
-    '" rx="' + SOCK.r + '" fill="' + sockC + '" stroke="' + kit.dark + '" stroke-width="2.5"/>' +
-    '<rect x="' + x + '" y="' + SOCK.bandY + '" width="' + SOCK.w + '" height="' + SOCK.bandH +
-    '" fill="' + bodyC + '" opacity="0.85"/>';
+    '" rx="' + SOCK.r + '" fill="' + sockC + '" stroke="' + sockLine + '" stroke-width="2.5"/>' +
+    (bandC
+      ? '<rect x="' + x + '" y="' + SOCK.bandY + '" width="' + SOCK.w + '" height="' +
+        SOCK.bandH + '" fill="' + bandC + '"/>'
+      : '');
   return '<path d="' + SHORTS_PATH + '" fill="' + shortC +
-         '" stroke="' + kit.dark + '" stroke-width="2.5"/>' +
+         '" stroke="' + shortLine + '" stroke-width="2.5"/>' +
          sock(SOCK.lx) + sock(SOCK.rx);
 }
 
@@ -761,22 +779,21 @@ function drawJersey(ctx, cx, topY, w, kit, weightPct) {
   // 반바지 + 양말 — 화면(hoseSVG)과 **같은 좌표/같은 색**이어야 합니다.
   {
     const sk = skin || {};
-    const bodyC = (kit.style === "us") ? US_BODY : kit.main;
-    ctx.fillStyle = sk.sleeve || kit.dark;
+    const shortC = sk.shorts || kit.dark;
+    const sockC = sk.socks || kit.dark;
+    ctx.lineWidth = 2.5;
     const shorts = new Path2D(SHORTS_PATH);
-    ctx.fill(shorts);
-    ctx.lineWidth = 2.5; ctx.strokeStyle = kit.dark; ctx.stroke(shorts);
+    ctx.fillStyle = shortC; ctx.fill(shorts);
+    ctx.strokeStyle = outlineFor(shortC); ctx.stroke(shorts);
     for (const x of [SOCK.lx, SOCK.rx]) {
       const leg = new Path2D();
       leg.roundRect(x, SOCK.y, SOCK.w, SOCK.h, SOCK.r);
-      ctx.fillStyle = sk.trim || kit.dark;
-      ctx.fill(leg);
-      ctx.stroke(leg);
-      ctx.save();
-      ctx.globalAlpha = 0.85;
-      ctx.fillStyle = bodyC;
-      ctx.fillRect(x, SOCK.bandY, SOCK.w, SOCK.bandH);
-      ctx.restore();
+      ctx.fillStyle = sockC; ctx.fill(leg);
+      ctx.strokeStyle = outlineFor(sockC); ctx.stroke(leg);
+      if (sk.sockBand) {
+        ctx.fillStyle = sk.sockBand;
+        ctx.fillRect(x, SOCK.bandY, SOCK.w, SOCK.bandH);
+      }
     }
   }
 

@@ -329,9 +329,10 @@ def render_pitch(this_month: CF.PeriodTotal, year_total: CF.PeriodTotal) -> None
             slots=pitch_grid.slot_meta(),
             height=1100,
             aspect_ratio=1.45,
-            # 골대 뒤 배너 — 위는 스킨 이름, 아래는 서비스 이름.
-            # 공유된 그림을 본 사람이 "저 경기장 뭐야" 를 물어볼 수 있게 합니다.
-            banner_top=skin_now.name.replace(" Edition", ""),
+            # 골대 뒤 배너 — 위는 **그 나라 말 응원 구호**, 아래는 서비스 이름.
+            # 영어 스킨 이름을 적었더니 팀이 전혀 연상되지 않아서 바꿨습니다.
+            # (스킨 이름은 📸 캡처 이미지 아래에 따로 새겨집니다)
+            banner_top=skin_now.chant or skin_now.name.replace(" Edition", ""),
             banner_bottom=config.APP_NAME,
             summary=capture_summary,
             legend=capture_legend,
