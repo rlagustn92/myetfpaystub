@@ -475,3 +475,48 @@ def test_the_tax_amount_is_not_shown_as_a_negative_number():
     보입니다(사용자 지적)."""
     src = open(APP, encoding="utf-8").read()
     assert '"-" + F.won(' not in src, "금액 앞에 마이너스를 붙이는 곳이 남아 있습니다"
+
+
+@pytest.fixture
+def with_dividends(monkeypatch):
+    """지난 1년 안에 실제로 받은 배당이 있는 상태.
+
+    `offline` 은 분배금을 빈 dict 로 끊어 놓으므로, 배당률처럼 **지급 이력이
+    있어야 보이는 것**은 이 fixture 를 같이 써야 합니다.
+    """
+    from conftest import dist, td
+    from services import distribution_service
+
+    def fake(p):
+        out = {}
+        for h in p.holdings:
+            amount = 300.0 if h.market == "KR" else 0.25
+            currency = "KRW" if h.market == "KR" else "USD"
+            # 이번 달 한 건(알약용) + 지난달 한 건(최근 1년 배당률용).
+            out[(h.market, h.ticker)] = td(
+                h.ticker,
+                [dist(h.ticker, (2026, 8, 14), amount, 2.0, currency=currency),
+                 dist(h.ticker, (2026, 9, 11), amount, 2.0, currency=currency)],
+                market=h.market,
+            )
+        return out
+
+    monkeypatch.setattr(distribution_service, "fetch_all", fake)
+
+
+def test_the_paycard_shows_both_dividend_rates(offline, with_dividends):
+    """배당률 두 개는 **기준이 다릅니다.**
+
+    · 금액 옆 알약 = 이번 달 금액이 원금의 몇 % (한 달치)
+    · 아래 칸      = 최근 1년에 받은 돈이 원금의 몇 % (연 기준)
+
+    라벨이 빠지면 둘 다 같은 기준으로 읽혀서 "이 숫자 뭐지?" 가 됩니다.
+    """
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    [b for b in at.button if "예시" in b.label][0].click().run()
+    assert not at.exception
+
+    text = " ".join(m.value for m in at.markdown)
+    assert "class='vb'" in text                 # 금액 옆 알약이 붙었는가
+    assert "원금의" in text                     # 한 달치 라벨
+    assert config.YOC_LABEL in text             # 연 기준 라벨 (기간이 적혀 있음)

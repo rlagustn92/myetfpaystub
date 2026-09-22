@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from calendar import monthrange
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 import config
 from models.distribution import Distribution
@@ -285,6 +285,81 @@ def year_total(portfolio: Portfolio, dists: dict, year: int,
     rows = build_rows(portfolio, dists, date(year, 1, 1), date(year, 12, 31),
                       include_estimates=include_estimates, **kw)
     return total_of(rows, label=f"{year}년")
+
+
+# ---------------------------------------------------------------------
+# 투자 원금 대비 배당률
+# ---------------------------------------------------------------------
+@dataclass
+class YieldOnCost:
+    """투자 원금 대비 배당률.
+
+    **실제로 들어온 돈만** 셉니다(예상값 제외). "앞으로 이만큼 나온다" 가
+    아니라 "지난 1년에 이만큼 나왔다" 입니다.
+
+    ⚠ 분모는 **지금 원금**입니다. 지난달에 많이 샀으면 원금만 커지고 받은
+      돈은 아직 없으니 배당률이 낮게 나옵니다 — 그게 맞는 동작이라서,
+      화면에 "최근 1년에 받은 돈 ÷ 지금 원금" 이라고 적습니다.
+    """
+
+    received_krw: float = 0.0
+    cost_krw: float = 0.0
+    payouts: int = 0                 # 실제 지급 건수
+    start: date | None = None
+    end: date | None = None
+
+    @property
+    def ok(self) -> bool:
+        """보여줄 수 있는가. 원금을 모르거나 받은 게 없으면 안 보여줍니다."""
+        return self.cost_krw > 0 and self.payouts > 0
+
+    @property
+    def pct(self) -> float | None:
+        """원금 대비 %. 원금을 모르면 `None` 입니다 (0 이 아닙니다)."""
+        if self.cost_krw <= 0:
+            return None
+        return self.received_krw / self.cost_krw * 100.0
+
+
+def ratio_of_cost(amount_krw: float | None, cost_krw: float | None) -> float | None:
+    """어떤 금액이 원금의 몇 %인지. 하나라도 모르면 `None`.
+
+    "이번 달 배당금은 원금의 0.5%" 처럼 **한 달치**를 잴 때 씁니다.
+    연 기준이 아니므로 화면에서도 연 기준과 섞어 적지 않습니다.
+    """
+    if not amount_krw or not cost_krw or cost_krw <= 0:
+        return None
+    return amount_krw / cost_krw * 100.0
+
+
+def yield_on_cost(portfolio: Portfolio,
+                  dists: dict[tuple[str, str], TickerDistributions],
+                  cost_krw: float,
+                  today: date | None = None,
+                  days: int = 365,
+                  only: tuple[str, str] | None = None,
+                  **kw) -> YieldOnCost:
+    """최근 `days` 일 동안 **실제로 받은** 배당금 ÷ 투자 원금.
+
+    `only` 에 (시장, 종목코드) 를 주면 그 종목만 셉니다(종목별 상세용).
+
+    ⚠ 예상값은 안 셉니다. 섞으면 "받은 돈" 이 아니게 되고, 커버드콜처럼
+      달마다 크게 달라지는 종목에서 숫자가 널뜁니다.
+    """
+    today = today or config.today_local()
+    start = today - timedelta(days=days - 1)      # 오늘을 포함해 365일
+    rows = build_rows(portfolio, dists, start, today,
+                      include_estimates=False, today=today, **kw)
+    if only is not None:
+        rows = [r for r in rows
+                if (r.holding.market, r.holding.ticker) == only]
+    got = YieldOnCost(cost_krw=cost_krw or 0.0, start=start, end=today)
+    for r in rows:
+        if r.amount_krw is None:                  # 환율을 몰라 금액을 못 낸 줄
+            continue
+        got.received_krw += r.amount_krw
+        got.payouts += 1
+    return got
 
 
 # ---------------------------------------------------------------------

@@ -327,6 +327,17 @@ def render_home() -> None:
     if this_month.has_tax_deferred:
         subs.append((config.TAX_DEFERRED_LABEL, F.won(this_month.tax_deferred_krw)))
 
+    # 배당률. **두 가지를 같이 보여줍니다** — 기준이 다르므로 라벨로 갈라 적습니다.
+    #  · 금액 옆 알약 = 이번 달 그 금액이 원금의 몇 % 인가 (한 달치)
+    #  · 아래 칸      = 최근 1년에 실제로 받은 돈이 원금의 몇 % 인가 (연 기준)
+    # ⚠ 알약에 연 기준을 적으면 바로 옆 금액과 계산이 안 맞아 "이 숫자 뭐지?"
+    #   가 됩니다. 알약에는 **그 금액에서 바로 나온 값만** 넣습니다.
+    month_ratio = CF.ratio_of_cost(this_month.amount_krw, summary.total_cost_krw)
+    yoc = CF.yield_on_cost(portfolio, dists, summary.total_cost_krw,
+                           today=today, latest_rate=summary.usdkrw)
+    if yoc.ok:
+        subs.append((config.YOC_LABEL, f"연 {F.pct(yoc.pct, 1)}"))
+
     panel(
         "배당금",
         paycard_html(
@@ -335,6 +346,7 @@ def render_home() -> None:
             f"이번달 {'예상 ' if this_month.has_estimate else ''}배당금 "
             f"({config.PRETAX_SUFFIX})",
             subs,
+            badge=(f"원금의 {F.pct(month_ratio)}" if month_ratio is not None else ""),
         )
         + "<div style='height:10px'></div>"
         + grid_html([
@@ -353,6 +365,9 @@ def render_home() -> None:
         note(f"※ {config.TAX_DEFERRED_HELP}")
     if this_month.tax_basis_is_partial:
         note(f"※ 과세표준 미발표 {this_month.unknown_tax_basis_rows}건 — 0원으로 계산")
+    if yoc.ok:
+        note(f"※ {config.YOC_LABEL} — 최근 1년 {F.won(yoc.received_krw)}"
+             f"({yoc.payouts}번) ÷ 투자 원금 {F.won(yoc.cost_krw)}. 예상값은 뺐습니다.")
 
     render_goal(year)
 
@@ -889,27 +904,38 @@ def render_detail() -> None:
     interval = DS.infer_interval_days(items)
     nxt = DS.estimate_next(td, today)
 
-    a, b, cc = st.columns(3)
-    with a:
-        kcard(F.native_amt(last.distribution_per_share if last else None, g.currency),
-              f"가장 최근 주당 배당금 ({config.PRETAX_SUFFIX})",
-              F.ymd(last.payment_date) if last else "")
-    with b:
-        mine = (last.distribution_per_share * g.total_shares) if last else None
-        # "그때 내 수량이면 받는 금액" 이라고 적었더니 무슨 말인지 모르겠다는
-        # 이야기를 들었습니다. 지금 갖고 있는 수량으로 환산한 금액입니다.
-        kcard(F.won(fx_service.to_krw(mine, g.currency, summary.usdkrw)),
-              f"내 {F.shares(g.total_shares)} 기준 금액 ({config.PRETAX_SUFFIX})",
-              DS.cycle_label(interval))
-    with cc:
-        if nxt:
-            mine_next = nxt.distribution_per_share * g.total_shares
-            kcard(F.won(fx_service.to_krw(mine_next, g.currency, summary.usdkrw)),
-                  f"다음 예상 배당금 ({config.PRETAX_SUFFIX})",
-                  f"🟡 {F.ymd(nxt.payment_date)} 예상")
-        else:
-            kcard(config.NO_DATA_TEXT, "다음 예상 배당금",
-                  "근거가 부족해 예상하지 않았습니다")
+    mine = (last.distribution_per_share * g.total_shares) if last else None
+    mine_next = (nxt.distribution_per_share * g.total_shares) if nxt else None
+    # 이 종목만의 원금 대비 배당률. 기본 화면과 **같은 기준**(최근 1년에
+    # 실제로 받은 돈 ÷ 지금 원금)이라 둘을 나란히 놓고 봐도 말이 맞습니다.
+    tyoc = CF.yield_on_cost(portfolio, dists, c, today=today,
+                            latest_rate=summary.usdkrw, only=(g.market, g.ticker))
+    st.markdown(
+        grid_html([
+            kcard_html(
+                F.native_amt(last.distribution_per_share if last else None, g.currency),
+                f"가장 최근 주당 배당금 ({config.PRETAX_SUFFIX})",
+                F.ymd(last.payment_date) if last else ""),
+            # "그때 내 수량이면 받는 금액" 이라고 적었더니 무슨 말인지 모르겠다는
+            # 이야기를 들었습니다. 지금 갖고 있는 수량으로 환산한 금액입니다.
+            kcard_html(F.won(fx_service.to_krw(mine, g.currency, summary.usdkrw)),
+                       f"내 {F.shares(g.total_shares)} 기준 금액 "
+                       f"({config.PRETAX_SUFFIX})",
+                       DS.cycle_label(interval)),
+            (kcard_html(F.won(fx_service.to_krw(mine_next, g.currency, summary.usdkrw)),
+                        f"다음 예상 배당금 ({config.PRETAX_SUFFIX})",
+                        f"🟡 {F.ymd(nxt.payment_date)} 예상")
+             if nxt else
+             kcard_html(config.NO_DATA_TEXT, "다음 예상 배당금",
+                        "근거가 부족해 예상하지 않았습니다")),
+            (kcard_html(f"연 {F.pct(tyoc.pct, 1)}", config.YOC_LABEL,
+                        f"{F.won(tyoc.received_krw)} ÷ 원금 {F.won(tyoc.cost_krw)}")
+             if tyoc.ok else
+             kcard_html(config.NO_DATA_TEXT, config.YOC_LABEL,
+                        "최근 1년에 받은 배당금이 없습니다")),
+        ], cols=4),
+        unsafe_allow_html=True,
+    )
 
     if nxt:
         note(f"※ {nxt.note}")

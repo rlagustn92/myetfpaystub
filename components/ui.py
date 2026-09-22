@@ -143,6 +143,12 @@ CSS = """
                 margin:.3rem 0 .18rem; font-variant-numeric: tabular-nums;
                 line-height:1; }
   .paycard .l { font-size:.78rem; opacity:.72; }
+  /* 금액 옆 알약. 큰 숫자와 같은 줄에 앉되 **크기로 서열을 분명히** 합니다 —
+     비슷하게 크면 둘 중 뭐가 본값인지 헷갈립니다. */
+  .paycard .vb { font-size:.8rem; font-weight:500; letter-spacing:0;
+                 margin-left:10px; padding:3px 9px; border-radius:999px;
+                 background:rgba(255,255,255,.16); vertical-align:middle;
+                 white-space:nowrap; }
   .paycard .sub { margin-top:16px; padding-top:13px;
                   border-top:1px solid var(--money-line);
                   display:flex; gap:26px; flex-wrap:wrap; }
@@ -466,13 +472,21 @@ def kcard_html(value: str, label: str, sub: str = "", tone: str = "") -> str:
 
 
 def paycard_html(amount: str, caption: str, label: str,
-                 subs: list[tuple[str, str]]) -> str:
+                 subs: list[tuple[str, str]], badge: str = "") -> str:
+    """월급 카드.
+
+    `badge` — 큰 금액 **바로 옆**에 붙는 작은 알약. 그 금액에서 바로 나온
+    값만 넣습니다. 기준이 다른 값을 옆에 붙이면 사람들은 무조건 큰 금액에서
+    나온 값으로 읽습니다.
+    """
     sub_html = "".join(
         f"<div><div class='k'>{_esc(k)}</div><div class='n'>{_esc(v)}</div></div>"
         for k, v in subs
     )
+    tag = f"<span class='vb'>{_esc(badge)}</span>" if badge else ""
     return (f"<div class='paycard'><div class='cap'>{_esc(caption)}</div>"
-            f"<div class='v'>{_esc(amount)}</div><div class='l'>{_esc(label)}</div>"
+            f"<div class='v'>{_esc(amount)}{tag}</div>"
+            f"<div class='l'>{_esc(label)}</div>"
             f"<div class='sub'>{sub_html}</div></div>")
 
 

@@ -407,3 +407,65 @@ def test_a_broken_goal_value_does_not_crash():
     assert p.dividend_goal_krw == 0.0
     p2 = Portfolio.from_dict({"dividend_goal_krw": -500})
     assert p2.dividend_goal_krw == 0.0      # 음수 목표는 없습니다
+
+
+# ---------------------------------------------------------------------
+# 투자 원금 대비 배당률
+# ---------------------------------------------------------------------
+def test_yield_on_cost_counts_only_the_last_year_of_real_payouts():
+    """"원금 대비 몇 %" 는 **실제로 받은 돈**으로만 잽니다."""
+    p = one_kr_portfolio(100)
+    items = [
+        dist("498400", (2026, 3, 15), 300.0, 2.0),    # 최근 1년 안
+        dist("498400", (2026, 9, 15), 300.0, 2.0),    # 최근 1년 안
+        dist("498400", (2024, 9, 15), 300.0, 2.0),    # 2년 전 — 안 셉니다
+    ]
+    got = CF.yield_on_cost(p, {("KR", "498400"): td("498400", items)},
+                           cost_krw=1_000_000, today=TODAY, latest_rate=FX)
+    assert got.payouts == 2
+    assert got.received_krw == 60_000                 # 300원 x 100주 x 2번
+    assert got.pct == pytest.approx(6.0)
+    assert got.ok is True
+
+
+def test_yield_on_cost_ignores_estimates():
+    """예상값을 섞으면 '받은 돈' 이 아니게 됩니다. 커버드콜은 달마다 크게
+    달라서 예상 한 건이 숫자를 통째로 흔듭니다."""
+    p = one_kr_portfolio(100)
+    real = dist("498400", (2026, 9, 15), 300.0, 2.0)
+    d = {("KR", "498400"): td("498400", [real])}
+    got = CF.yield_on_cost(p, d, cost_krw=1_000_000, today=TODAY, latest_rate=FX)
+    # upcoming() 이 만들어 내는 예상 지급은 끼지 않습니다.
+    assert got.payouts == 1
+    assert all(r.status != config.STATUS_ESTIMATED for r in [real])
+
+
+def test_yield_on_cost_without_cost_is_none_not_zero():
+    """원금을 모르면 **모른다**입니다. 0% 라고 적으면 거짓말이 됩니다."""
+    p = one_kr_portfolio(100)
+    d = {("KR", "498400"): td("498400", [dist("498400", (2026, 9, 15), 300.0, 2.0)])}
+    got = CF.yield_on_cost(p, d, cost_krw=0, today=TODAY, latest_rate=FX)
+    assert got.pct is None
+    assert got.ok is False
+
+
+def test_yield_on_cost_can_be_narrowed_to_one_ticker():
+    """종목별 상세에서는 그 종목만 셉니다."""
+    p = one_kr_portfolio(100)
+    p.add(kr(ticker="069500", name="KODEX 200", shares=10))
+    d = {
+        ("KR", "498400"): td("498400", [dist("498400", (2026, 9, 15), 300.0, 2.0)]),
+        ("KR", "069500"): td("069500", [dist("069500", (2026, 9, 15), 500.0, 2.0)]),
+    }
+    got = CF.yield_on_cost(p, d, cost_krw=100_000, today=TODAY, latest_rate=FX,
+                           only=("KR", "069500"))
+    assert got.payouts == 1
+    assert got.received_krw == 5_000            # 500원 x 10주
+    assert got.pct == pytest.approx(5.0)
+
+
+def test_ratio_of_cost_is_a_plain_share_of_the_principal():
+    """이번 달 금액이 원금의 몇 % 인지. **연 기준이 아닙니다.**"""
+    assert CF.ratio_of_cost(601_224, 118_400_000) == pytest.approx(0.5078, abs=1e-3)
+    assert CF.ratio_of_cost(100, 0) is None
+    assert CF.ratio_of_cost(None, 1_000) is None

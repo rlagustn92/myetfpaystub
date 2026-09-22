@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 # =====================================================================
 # 사용자에게 보이는 변화가 있으면 **아주 작은 수정이라도** 이 숫자를 올립니다.
 # 화면 헤더의 서비스 이름 옆에 그대로 표시됩니다.
-APP_VERSION: str = "0.24.0"
+APP_VERSION: str = "0.25.0"
 
 APP_NAME: str = "MY ETF 급여명세서"
 APP_TAGLINE: str = "여러 증권사에 흩어진 내 ETF와 매달 들어오는 돈을 한눈에"
@@ -196,6 +196,9 @@ WITHHOLDING_LABEL: str = "예상 원천징수액"
 WITHHOLDING_SHORT: str = "원천징수액"
 # 배당금은 **세전**입니다. 안 적으면 통장에 꽂히는 돈으로 오해합니다.
 PRETAX_SUFFIX: str = "세전"
+# 투자 원금 대비 배당률. **실제로 받은 돈만** 셉니다(예상값 제외).
+YOC_LABEL: str = "원금 대비 (최근 1년)"
+YOC_HELP: str = "최근 1년에 실제로 받은 배당금 ÷ 지금 투자 원금 · 예상값은 뺐습니다"
 WITHHOLDING_HELP: str = (
     f"일반계좌에서 과세표준액의 {WITHHOLDING_RATE_LABEL} 를 떼 갑니다 · 예상값"
 )
