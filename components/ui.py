@@ -13,6 +13,7 @@ components/ui.py  --  화면 조각과 스타일 (보이는 것만 담당, 계�
 from __future__ import annotations
 
 import html
+import unicodedata
 
 import streamlit as st
 
@@ -118,9 +119,17 @@ CSS = """
   .grid.c6 { grid-template-columns:repeat(6,1fr); }
 
   /* ---- 값 카드 — 테두리 없이 은은한 채움만 ---- */
+  /* ⚠ 카드를 **컨테이너로 선언**합니다. 그래야 아래 `cqi`(카드 폭의 1%)를
+     쓸 수 있습니다. 칸이 좁아지면 글자가 같이 작아집니다 — 엑셀의 "셀에 맞춤". */
   .kcard { background:var(--tint); border:none; border-radius:14px;
-           padding:16px 18px; height:100%; }
-  .kcard .v { font-size:1.5rem; font-weight:600; color:var(--ink);
+           padding:16px 18px; height:100%; container-type:inline-size; }
+  /* ⚠ 큰 금액은 **줄바꿈 금지**입니다. "+₩416,675" 가 부호에서 잘려
+     "+" 만 윗줄에 남은 적이 있습니다(실제로 당했습니다).
+     ⚠ 대신 폭에 맞춰 줄어들게 합니다. 평가손익은 몇천만원까지 커질 수
+       있어서 고정 크기로 두면 언젠가 반드시 삐져나옵니다. 칸이 넓으면
+       1.5rem 그대로, 좁아지면 .85rem 까지 내려갑니다. */
+  .kcard .v { font-size:clamp(.85rem, 10cqi, 1.5rem); font-weight:600;
+              color:var(--ink); white-space:nowrap;
               letter-spacing:-.04em; font-variant-numeric: tabular-nums;
               line-height:1.15; }
   .kcard .l { font-size:.8rem; color:var(--ink-soft); margin-top:5px; }
@@ -141,6 +150,7 @@ CSS = """
        크기는 오히려 조금 키우고 **자간을 더 좁혀** 덩어리로 보이게 했습니다.
        큰 숫자는 굵기가 아니라 **크기와 여백**으로 무게를 갖는 편이 낫습니다. */
   .paycard .v { font-size:2.7rem; font-weight:500; letter-spacing:-.052em;
+                white-space:nowrap;
                 margin:.3rem 0 .18rem; font-variant-numeric: tabular-nums;
                 line-height:1; }
   .paycard .l { font-size:.78rem; opacity:.72; }
@@ -259,9 +269,22 @@ CSS = """
                     background:#F3FAF5; border-radius:14px; }
   .st-key-calpick .pt { font-size:.82rem; font-weight:700; color:var(--naver);
                         margin-bottom:2px; }
-  /* 고르는 칸 자체도 흰 바탕 + 초록 테두리로 "여기를 눌러라" 를 말합니다. */
-  .st-key-calpick [data-baseweb="select"] > div { border-color:var(--naver);
-                                                  background:#fff; }
+  /* 고르는 칸 자체가 "여기를 눌러라" 라고 말해야 합니다. 연한 초록 상자 위에
+     **흰 바탕 + 굵은 초록 테두리**를 올려 한 단 떠 보이게 했습니다.
+     ⚠ BaseWeb 이 인라인 스타일을 얹기 때문에 `!important` 가 필요합니다. */
+  /* ⚠ Streamlit 1.63 의 셀렉트박스는 **BaseWeb 이 아니라 react-aria** 입니다.
+       `[data-baseweb="select"]` 로 잡으면 아무 일도 안 일어납니다(에러도 안
+       납니다). 실제 DOM 은 `.stSelectbox .react-aria-ComboBox > [role=group]`.
+       버전이 또 바뀔 수 있어 옛 선택자도 같이 남겨 둡니다. */
+  .st-key-calpick .stSelectbox [role="group"],
+  .st-key-calpick [data-baseweb="select"] > div {
+      border:2px solid var(--naver) !important;
+      background:#FFFFFF !important; border-radius:10px !important;
+      box-shadow:0 1px 0 rgba(10,128,64,.18) !important; }
+  .st-key-calpick .stSelectbox [role="group"]:hover,
+  .st-key-calpick [data-baseweb="select"] > div:hover {
+      background:#F7FEF9 !important; }
+  .st-key-calpick label p { font-weight:700; color:var(--naver); }
 
   /* ---- 큰 날짜 (월별 급여명세서) ---- */
   .bigdate { display:flex; align-items:baseline; gap:10px; }
@@ -349,12 +372,36 @@ def header(counts: tuple[int, int] | None) -> None:
             )
 
 
+def fit_style(value: str, max_rem: float = 1.5, min_rem: float = 0.8,
+              pad_px: int = 36) -> str:
+    """긴 값이 칸을 넘지 않게 **글자 크기를 칸 폭에 맞춥니다** (엑셀 "셀에 맞춤").
+
+    왜 필요한가 — 평가손익은 사람에 따라 몇천만원, 몇억이 됩니다. 크기를
+    고정해 두면 언제 넘칠지 모르고, 넘치면 "+₩416,675" 가 부호에서 잘려
+    **"+" 만 윗줄에 남습니다**(실제로 당했습니다).
+
+    CSS 는 글자 수를 셀 수 없습니다. 그래서 여기서 세어 `calc()` 에 넘깁니다.
+    칸 폭은 CSS 가 아는 값(`100cqi` = 카드 폭)이라 둘을 곱하면 딱 맞습니다.
+
+    ⚠ 한글은 숫자보다 두 배 가까이 넓어서 따로 셉니다("데이터 없음").
+    ⚠ `cqi` 는 `.kcard` 에 `container-type:inline-size` 가 있어야 동작합니다.
+    """
+    units = sum(1.9 if unicodedata.east_asian_width(ch) in "WF" else 1.0
+                for ch in str(value or ""))
+    if units <= 0:
+        return ""
+    # 0.58em ≈ 숫자 한 자 폭(tabular-nums + 자간 -0.04em). 1.72 = 1 / 0.58.
+    return (f"font-size:clamp({min_rem}rem,"
+            f"calc((100cqi - {pad_px}px) * 1.72 / {units:.1f}),{max_rem}rem)")
+
+
 def kcard(value: str, label: str, sub: str = "", tone: str = "") -> None:
     """숫자 하나 + 그게 무슨 뜻인지 한 줄. tone: "" | "up" | "down"."""
     cls = f"kcard {tone}".strip()
     sub_html = f"<div class='s'>{_esc(sub)}</div>" if sub else ""
     st.markdown(
-        f"<div class='{cls}'><div class='v'>{_esc(value)}</div>"
+        f"<div class='{cls}'>"
+        f"<div class='v' style='{fit_style(value)}'>{_esc(value)}</div>"
         f"<div class='l'>{_esc(label)}</div>{sub_html}</div>",
         unsafe_allow_html=True,
     )
@@ -479,7 +526,8 @@ def kcard_html(value: str, label: str, sub: str = "", tone: str = "") -> str:
     """값 하나 + 그게 무슨 뜻인지 한 줄. tone: "" | "up" | "down"."""
     cls = f"kcard {tone}".strip()
     sub_html = f"<div class='s'>{_esc(sub)}</div>" if sub else ""
-    return (f"<div class='{cls}'><div class='v'>{_esc(value)}</div>"
+    return (f"<div class='{cls}'>"
+            f"<div class='v' style='{fit_style(value)}'>{_esc(value)}</div>"
             f"<div class='l'>{_esc(label)}</div>{sub_html}</div>")
 
 

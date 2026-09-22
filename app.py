@@ -894,7 +894,11 @@ def render_detail() -> None:
                        F.pct_signed(rate) if rate is not None else "",
                        tone="up" if (profit or 0) > 0 else
                             ("down" if (profit or 0) < 0 else "")),
-        ], cols=6),
+        # ⚠ 여섯 칸을 **한 줄에 넣지 않습니다.** 칸이 좁아져서 "+₩8,198,500"
+        #   같은 큰 금액이 부호에서 잘려 "+" 만 윗줄에 남았습니다. 3+3 으로
+        #   나누면 칸이 두 배 넓어지고, 위 줄은 종목 정보 · 아래 줄은 돈으로
+        #   뜻도 갈립니다. (칸이 더 좁아져도 글자가 줄어들게 CSS 가 받칩니다)
+        ], cols=3),
         unsafe_allow_html=True,
     )
     note(f"※ {config.PRICE_BASIS_HELP}")
