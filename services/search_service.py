@@ -234,6 +234,31 @@ def resolve_us_ticker(ticker: str) -> SearchHit | None:
     return cache.get_or_set(key, config.CACHE_TTL_SEARCH_SECONDS, _load)
 
 
+def resolve(ticker: str, market: str = "") -> SearchHit | None:
+    """종목코드/티커가 **정확히 일치**하는 한 건. 없으면 None.
+
+    붙여넣기로 들어온 **이름은 믿지 않습니다.** 증권사마다 띄어쓰기도
+    줄임말도 제각각이라("TIGER미국배당다우존스", "TIGER 미국배당다우존스H")
+    그대로 저장하면 같은 종목이 다른 이름으로 남습니다. 코드만 맞으면
+    **공식 이름은 여기서** 가져옵니다.
+
+    네트워크를 타지 않습니다(이미 받아 둔 목록과 시드만 봅니다).
+    시드에 없는 미국 티커는 `resolve_us_ticker()` 가 따로 확인합니다.
+    """
+    code = str(ticker or "").strip().upper()
+    if not code:
+        return None
+    if market != MARKET_US and len(code) == 6:
+        for hit in _kr_universe():
+            if hit.ticker == code:
+                return hit
+    if market != MARKET_KR:
+        for hit in _us_seed_hits():
+            if hit.ticker == code:
+                return hit
+    return None
+
+
 def search(query: str, market: str = "ALL", limit: int = 30) -> list[SearchHit]:
     """티커/종목코드/이름으로 찾습니다.
 

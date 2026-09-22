@@ -150,17 +150,29 @@ def test_the_example_on_screen_actually_parses():
     """화면에 보여 주는 예시는 **실제로 읽혀야 합니다.**
 
     예시가 파서와 어긋나면 사용자는 "시키는 대로 했는데 안 된다" 를 겪습니다.
-    머리글 줄을 넣은 것도 사용자 지적이었습니다 — 숫자만 늘어놓으면
-    100 이 수량인지 32,000 이 총액인지 알 수가 없어서입니다.
+
+    ⚠ 예시에 **종목명이 없습니다.** 이름은 증권사마다 띄어쓰기도 줄임말도
+      달라 사람들이 대부분 틀리게 적습니다(사용자 지적). 코드만 정확하면
+      되고, 이름은 코드로 찾아 채웁니다.
     """
     import app
 
     got = IMP.parse(app.PASTE_EXAMPLE)
     assert not got.bad, [r.problem for r in got.bad]
-    assert len(got.good) == 2          # 머리글 줄은 종목이 아닙니다
+    assert len(got.good) == 3          # 머리글 줄은 종목이 아닙니다
 
-    kodex, tiger = got.good
+    kodex, tiger, schd = got.good
     assert (kodex.ticker, kodex.shares, kodex.avg_price) == ("069500", 100.0, 32000.0)
-    assert kodex.name == "KODEX 200"
     assert kodex.market == MARKET_KR
     assert (tiger.ticker, tiger.shares, tiger.avg_price) == ("458730", 50.0, 11200.0)
+    # 미국은 **티커가 종목코드 자리**입니다. 소수점 단가도 그대로 읽힙니다.
+    assert (schd.ticker, schd.shares, schd.avg_price) == ("SCHD", 30.0, 27.15)
+    assert schd.market == MARKET_US
+
+
+def test_a_paste_without_any_name_column_is_enough():
+    """**종목명은 선택입니다.** 코드·수량·평균단가만 있으면 등록됩니다."""
+    got = IMP.parse("종목코드,수량,평균단가" + chr(10) + "069500,100,32000")
+    assert len(got.good) == 1
+    assert got.good[0].ticker == "069500"
+    assert got.good[0].name == ""

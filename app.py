@@ -1082,6 +1082,16 @@ def _on_price_changed() -> None:
         st.session_state.get("add_price_currency", "KRW"))
 
 
+def _official_name(row) -> str:
+    """미리보기에 쓸 이름. **붙여넣은 이름보다 공식 이름이 먼저입니다.**
+
+    사용자가 이름을 틀리게 적었어도 화면에 제대로 뜨면 "맞게 읽었구나" 를
+    바로 알 수 있습니다. 네트워크는 타지 않습니다(미리보기라서요).
+    """
+    found = search_service.resolve(row.ticker, row.market) if row.ticker else None
+    return found.name if found else (row.name or row.ticker)
+
+
 def _find_holding(ticker: str, market: str, broker: str, account: str):
     """같은 증권사·계좌에 있는 같은 종목 한 줄. 없으면 None."""
     for h in portfolio.holdings:
@@ -1106,10 +1116,14 @@ def _existing_matches(rows, broker: str, account: str) -> set[str]:
 
 # 붙여넣기 예시. **머리글을 같이 보여줍니다** — 숫자만 늘어놓으면
 # 100 이 수량인지 32,000 이 총액인지 알 수가 없습니다.
+# ⚠ **종목명을 넣지 않습니다.** 이름은 증권사마다 띄어쓰기도 줄임말도
+#   달라서 사람들이 대부분 틀리게 적습니다. 코드만 맞으면 공식 이름은
+#   `search_service.resolve()` 가 찾아 줍니다. 미국은 티커가 그 자리입니다.
 # ⚠ 이 글자 그대로가 실제로 읽혀야 합니다. 테스트가 확인합니다.
-PASTE_EXAMPLE = """종목명                  종목코드  수량  평균단가
-KODEX 200               069500    100   32,000
-TIGER 미국배당다우존스  458730    50    11,200"""
+PASTE_EXAMPLE = """종목코드       수량    평균단가
+069500          100      32,000
+458730           50      11,200
+SCHD             30       27.15"""
 
 
 def render_paste_import() -> None:
@@ -1126,15 +1140,15 @@ def render_paste_import() -> None:
         # ⚠ note() 는 마크다운이 아닙니다. ** 를 쓰면 별표가 그대로 찍힙니다.
         note("증권사 앱·HTS 의 잔고 화면을 그대로 긁어서(Ctrl+A, Ctrl+C) "
              "아래에 붙여넣으세요. 엑셀에서 복사해도 됩니다.")
-        note("종목 · 수량 · 평균단가 세 가지만 있으면 됩니다. 열 순서는 달라도 되고, "
-             "다른 열이 섞여 있어도 괜찮습니다.")
         # ⚠ 예시에 **머리글 줄을 넣습니다.** 숫자만 늘어놓으면 100 이 수량인지
         #   32,000 이 총액인지 알 수가 없다는 지적을 받았습니다.
         #   ⚠ 이 글자 그대로가 실제로 읽혀야 합니다 — 테스트가 이 상수를
         #     import_service 에 그대로 넣어 확인합니다.
         st.code(PASTE_EXAMPLE, language=None)
-        note("첫 줄은 머리글입니다. 둘째 줄은 「KODEX 200 을 100주, "
-             "한 주 평균 32,000원에 샀다」는 뜻입니다.")
+        note("종목코드 · 수량 · 평균단가 세 가지만 맞으면 됩니다. 종목명은 안 적어도 되고, "
+             "열 순서가 달라도, 다른 열이 섞여 있어도 괜찮습니다.")
+        note("미국 ETF 는 종목코드 자리에 티커(SCHD)를 적습니다. 둘째 줄은 "
+             "「069500 을 100주, 한 주 평균 32,000원에 샀다」는 뜻입니다.")
 
         text = st.text_area("붙여넣기", height=150, key="imp_text",
                             placeholder="여기에 붙여넣으세요")
@@ -1161,7 +1175,7 @@ def render_paste_import() -> None:
         if got.good:
             st.markdown(
                 "".join(
-                    row_html(r.name or r.ticker,
+                    row_html(_official_name(r),
                              f"{r.ticker or '코드 확인 필요'} · "
                              f"{'미국' if r.market == MARKET_US else '한국'}",
                              f"{F.shares(r.shares)}",
@@ -1202,6 +1216,16 @@ def render_paste_import() -> None:
                     if not hits:
                         continue
                     ticker, market, name = hits[0].ticker, hits[0].market, hits[0].name
+                else:
+                    # 붙여넣은 **이름은 안 씁니다.** 증권사마다 띄어쓰기도
+                    # 줄임말도 달라서 같은 종목이 다른 이름으로 남습니다.
+                    # 코드로 찾은 공식 이름을 씁니다. 못 찾으면 그때만
+                    # 붙여넣은 이름을, 그것도 없으면 코드를 씁니다.
+                    found = (search_service.resolve(ticker, market)
+                             or (search_service.resolve_us_ticker(ticker)
+                                 if market == MARKET_US else None))
+                    if found is not None:
+                        ticker, market, name = found.ticker, found.market, found.name
                 shares = float(r.shares or 0)
                 price = float(r.avg_price or 0)
                 same = _find_holding(ticker, market, broker, account)

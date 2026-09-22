@@ -133,3 +133,29 @@ def test_normalize_never_changes_what_the_user_sees():
     """정규화는 **비교용**입니다. 화면 이름은 원래 이름 그대로여야 합니다."""
     hit = S.search("나스닥 커버")[0]
     assert hit.name == "TIGER 미국나스닥100커버드콜(합성)"
+
+
+def test_resolve_gives_the_official_name_for_an_exact_code():
+    """붙여넣기로 들어온 **이름은 믿지 않습니다.**
+
+    증권사마다 띄어쓰기도 줄임말도 제각각이라 그대로 저장하면 같은 종목이
+    다른 이름으로 남습니다. 코드만 맞으면 공식 이름을 여기서 가져옵니다.
+    """
+    got = S.resolve("069500")
+    assert got is not None and got.name == "KODEX 200"
+    assert got.market == MARKET_KR
+
+
+def test_resolve_is_exact_only():
+    """검색과 달리 **정확히 일치**하는 것만 돌려줍니다. 비슷한 것을 골라
+    엉뚱한 종목을 등록해 버리면 자산이 통째로 틀어집니다."""
+    assert S.resolve("0695") is None
+    assert S.resolve("") is None
+    assert S.resolve("없는코드") is None
+
+
+def test_resolve_finds_a_us_ticker_without_network():
+    """미국은 **티커가 종목코드 자리**입니다. 시드에 있는 것은 네트워크
+    없이 찾습니다(미리보기에서 부르기 때문입니다)."""
+    got = S.resolve("SCHD")
+    assert got is not None and got.market == MARKET_US
