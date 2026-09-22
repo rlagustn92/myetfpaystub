@@ -1104,6 +1104,14 @@ def _existing_matches(rows, broker: str, account: str) -> set[str]:
     return out
 
 
+# 붙여넣기 예시. **머리글을 같이 보여줍니다** — 숫자만 늘어놓으면
+# 100 이 수량인지 32,000 이 총액인지 알 수가 없습니다.
+# ⚠ 이 글자 그대로가 실제로 읽혀야 합니다. 테스트가 확인합니다.
+PASTE_EXAMPLE = """종목명                  종목코드  수량  평균단가
+KODEX 200               069500    100   32,000
+TIGER 미국배당다우존스  458730    50    11,200"""
+
+
 def render_paste_import() -> None:
     """증권사 잔고를 **복사해서 붙여넣기** 로 한 번에 등록.
 
@@ -1115,11 +1123,18 @@ def render_paste_import() -> None:
       화면에도 안 올라갑니다.
     """
     with st.expander("📋 　증권사 잔고 붙여넣기　— 한 번에 등록하기 👆", expanded=False):
-        note("증권사 앱이나 HTS 의 잔고 화면을 그대로 긁어서(Ctrl+A, Ctrl+C) "
+        # ⚠ note() 는 마크다운이 아닙니다. ** 를 쓰면 별표가 그대로 찍힙니다.
+        note("증권사 앱·HTS 의 잔고 화면을 그대로 긁어서(Ctrl+A, Ctrl+C) "
              "아래에 붙여넣으세요. 엑셀에서 복사해도 됩니다.")
-        st.code("KODEX 200            069500    100    32,000\n"
-                "TIGER 미국배당다우존스   458730     50    11,200",
-                language=None)
+        note("종목 · 수량 · 평균단가 세 가지만 있으면 됩니다. 열 순서는 달라도 되고, "
+             "다른 열이 섞여 있어도 괜찮습니다.")
+        # ⚠ 예시에 **머리글 줄을 넣습니다.** 숫자만 늘어놓으면 100 이 수량인지
+        #   32,000 이 총액인지 알 수가 없다는 지적을 받았습니다.
+        #   ⚠ 이 글자 그대로가 실제로 읽혀야 합니다 — 테스트가 이 상수를
+        #     import_service 에 그대로 넣어 확인합니다.
+        st.code(PASTE_EXAMPLE, language=None)
+        note("첫 줄은 머리글입니다. 둘째 줄은 「KODEX 200 을 100주, "
+             "한 주 평균 32,000원에 샀다」는 뜻입니다.")
 
         text = st.text_area("붙여넣기", height=150, key="imp_text",
                             placeholder="여기에 붙여넣으세요")
@@ -1245,8 +1260,8 @@ def render_manage() -> None:
     q = st.text_input("어떤 ETF 인가요?",
                       placeholder="커버 액티 · 코덱스 200 · SCHD · 069500",
                       key="add_query")
-    note("이름을 조각으로 나눠 쳐도 됩니다. 띄어쓰기는 신경 쓰지 않아도 되고, "
-         "조각이 전부 들어간 종목을 찾아 줍니다. 예: `커버 액티`")
+    note("이름을 단어로 나눠 쳐도 됩니다. 띄어쓰기는 신경 쓰지 않아도 되고, "
+         "단어가 전부 들어간 종목을 찾아 줍니다. 예: 커버 액티")
     hit = None
     if q:
         hits = search_service.search(q, limit=20)

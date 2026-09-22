@@ -143,3 +143,24 @@ def test_a_tab_pasted_table_keeps_commas_inside_cells():
     got = IMP.parse("종목코드\t수량\t평균단가\n069500\t1,000\t32,000")
     assert got.good[0].shares == 1000.0
     assert got.good[0].avg_price == 32000.0
+
+
+
+def test_the_example_on_screen_actually_parses():
+    """화면에 보여 주는 예시는 **실제로 읽혀야 합니다.**
+
+    예시가 파서와 어긋나면 사용자는 "시키는 대로 했는데 안 된다" 를 겪습니다.
+    머리글 줄을 넣은 것도 사용자 지적이었습니다 — 숫자만 늘어놓으면
+    100 이 수량인지 32,000 이 총액인지 알 수가 없어서입니다.
+    """
+    import app
+
+    got = IMP.parse(app.PASTE_EXAMPLE)
+    assert not got.bad, [r.problem for r in got.bad]
+    assert len(got.good) == 2          # 머리글 줄은 종목이 아닙니다
+
+    kodex, tiger = got.good
+    assert (kodex.ticker, kodex.shares, kodex.avg_price) == ("069500", 100.0, 32000.0)
+    assert kodex.name == "KODEX 200"
+    assert kodex.market == MARKET_KR
+    assert (tiger.ticker, tiger.shares, tiger.avg_price) == ("458730", 50.0, 11200.0)
