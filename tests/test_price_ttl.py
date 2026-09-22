@@ -56,35 +56,45 @@ def test_us_friday_night_runs_into_saturday_dawn():
     assert PP.market_is_open(MARKET_US, at(2026, 9, 27, 23)) is False      # 일 밤
 
 
-def test_ttl_is_long_while_the_market_is_shut():
-    """닫혀 있으면 값이 안 바뀝니다. 다시 받을 이유가 없습니다."""
-    assert PP.latest_price_ttl(MARKET_KR, at(2026, 9, 22, 10)) == OPEN     # 화 장중
-    assert PP.latest_price_ttl(MARKET_KR, at(2026, 9, 22, 16)) == SHUT     # 마감 후
-    assert PP.latest_price_ttl(MARKET_KR, at(2026, 9, 26, 10)) == SHUT     # 토
-
-
-def test_quiet_hours_win_even_if_a_market_is_open():
-    """밤 8시~아침 8시에는 **볼 사람이 없습니다.** 그 시간에 30분마다 다시
-    받아봐야 무료 소스에 막힐 위험만 큽니다(사용자 결정).
-
-    ⚠ 그 결과 **미국 종목은 사실상 항상 긴 주기**입니다. 미국장이 한국 시간
-      22:00~06:30 이라 조용한 시간에 통째로 들어옵니다. 대신 한국 낮에는
-      미국장이 닫혀 있어 종가가 안 바뀌므로 잃는 게 없습니다.
+def test_each_market_gets_its_own_clock():
+    """⭐ 한국과 미국은 **열리는 시간이 정반대**입니다. 하나의 시계로 판단하면
+    한쪽은 반드시 틀립니다 — 한국 낮에 미국 종목을 '장중' 으로 보거나,
+    한국 밤에 미국 종목을 '마감' 으로 보게 됩니다.
     """
-    assert PP.is_quiet_hour(at(2026, 9, 23, 3)) is True
-    assert PP.is_quiet_hour(at(2026, 9, 23, 21)) is True
-    assert PP.is_quiet_hour(at(2026, 9, 23, 12)) is False
+    # 한국 낮 — 한국장만 열려 있습니다
+    assert PP.latest_price_ttl(MARKET_KR, at(2026, 9, 22, 10)) == OPEN
+    assert PP.latest_price_ttl(MARKET_US, at(2026, 9, 22, 10)) == SHUT
+    # 한국 밤 — 미국장만 열려 있습니다
+    assert PP.latest_price_ttl(MARKET_KR, at(2026, 9, 22, 23)) == SHUT
+    assert PP.latest_price_ttl(MARKET_US, at(2026, 9, 22, 23)) == OPEN
+    # 한국 새벽 — 미국장은 아직 열려 있습니다
+    assert PP.latest_price_ttl(MARKET_US, at(2026, 9, 23, 3)) == OPEN
 
-    assert PP.market_is_open(MARKET_US, at(2026, 9, 23, 3)) is True    # 열려 있어도
-    assert PP.latest_price_ttl(MARKET_US, at(2026, 9, 23, 3)) == SHUT  # 길게 둡니다
-    assert PP.latest_price_ttl(MARKET_US, at(2026, 9, 23, 14)) == SHUT
+
+def test_ttl_is_long_while_that_market_is_shut():
+    """닫혀 있으면 값이 안 바뀝니다. 다시 받을 이유가 없습니다."""
+    assert PP.latest_price_ttl(MARKET_KR, at(2026, 9, 22, 16)) == SHUT   # 마감 후
+    assert PP.latest_price_ttl(MARKET_KR, at(2026, 9, 26, 10)) == SHUT   # 토
+    assert PP.latest_price_ttl(MARKET_US, at(2026, 9, 27, 23)) == SHUT   # 일 밤
 
 
-def test_the_short_ttl_only_happens_in_daytime_korean_hours():
-    """짧은 주기가 걸리는 시간이 실제로 있어야 이 기능이 의미가 있습니다."""
-    short = [h for h in range(24)
-             if PP.latest_price_ttl(MARKET_KR, at(2026, 9, 22, h)) == OPEN]
-    assert short == [9, 10, 11, 12, 13, 14, 15]
+def test_the_two_markets_never_use_the_short_ttl_at_the_same_time():
+    """한국 낮과 미국 밤은 안 겹칩니다. 겹친다면 창을 잘못 잡은 것입니다."""
+    for hour in range(24):
+        when = at(2026, 9, 22, hour)
+        both = (PP.latest_price_ttl(MARKET_KR, when) == OPEN
+                and PP.latest_price_ttl(MARKET_US, when) == OPEN)
+        assert not both, f"{hour}시에 두 시장이 같이 열려 있다고 봅니다"
+
+
+def test_each_market_actually_gets_some_short_ttl_hours():
+    """둘 다 항상 긴 주기면 이 기능이 아무것도 안 하는 것입니다."""
+    kr = [h for h in range(24)
+          if PP.latest_price_ttl(MARKET_KR, at(2026, 9, 22, h)) == OPEN]
+    us = [h for h in range(24)
+          if PP.latest_price_ttl(MARKET_US, at(2026, 9, 22, h)) == OPEN]
+    assert kr == [9, 10, 11, 12, 13, 14, 15]
+    assert us == [0, 1, 2, 3, 4, 5, 6, 22, 23]
 
 
 def test_the_shut_ttl_is_actually_longer():

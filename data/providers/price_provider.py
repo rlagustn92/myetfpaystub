@@ -59,22 +59,6 @@ _KR_OPEN, _KR_CLOSE = _time(9, 0), _time(15, 40)
 # 조금 더 나갈 뿐입니다 — 틀릴 거면 넓은 쪽으로 틀리는 게 낫습니다.
 _US_OPEN, _US_CLOSE = _time(22, 0), _time(6, 30)
 
-# ⭐ **조용한 시간** — 이 앱을 보는 사람이 거의 없는 시간대(한국 기준).
-#    이 사이에는 시세를 자주 갱신하지 않습니다. 새벽에 30분마다 다시 받아봐야
-#    볼 사람이 없고, 무료 소스에 막힐 위험만 키웁니다(사용자 결정).
-#    ⚠ 그 결과 **미국 종목은 사실상 항상 긴 주기**가 됩니다 — 미국장이 한국
-#      시간으로 22:00~06:30 이라 통째로 이 안에 들어오기 때문입니다.
-#      대신 한국 낮에는 미국장이 **닫혀 있어서 종가가 안 바뀌므로** 잃는 게
-#      없습니다. 새벽에 보는 사람만 "진행 중인 미국장 가격" 대신 직전
-#      종가를 보게 됩니다(화면에 기준일을 같이 적고 있습니다).
-_QUIET_START, _QUIET_END = _time(20, 0), _time(8, 0)
-
-
-def is_quiet_hour(at: datetime | None = None) -> bool:
-    """지금이 조용한 시간(밤 8시~아침 8시)인가. 자정을 넘습니다."""
-    clock = (at or config.now_local()).time()
-    return clock >= _QUIET_START or clock < _QUIET_END
-
 
 def market_is_open(market: str, at: datetime | None = None) -> bool:
     """지금 그 시장이 열려 있는가 (한국시간 기준).
@@ -93,24 +77,22 @@ def market_is_open(market: str, at: datetime | None = None) -> bool:
 
 
 def latest_price_ttl(market: str, at: datetime | None = None) -> int:
-    """최신가를 얼마나 오래 쓸 것인가(초). 장중 30분 / 그 외 6시간.
+    """최신가를 얼마나 오래 쓸 것인가(초). 장중 15분 / 장 마감 6시간.
 
-    **30분이 되는 조건은 둘 다 참일 때뿐입니다.**
+    ⭐ **시장마다 따로 봅니다.** 한국과 미국은 열리는 시간이 정반대입니다.
 
-        1. 지금이 한국 시간 08:00~20:00 (사람이 보는 시간)
-        2. 그 시장이 열려 있음
+        한국 종목  한국시간 09:00~15:40 에만 15분, 나머지 6시간
+        미국 종목  한국시간 22:00~06:30 에만 15분, 나머지 6시간
 
-    밤·주말에는 종가가 **안 바뀌므로** 다시 받는 게 순수한 낭비이고, 새벽에는
-    볼 사람도 없습니다. 무료 소스에 막힐 위험만 키웁니다.
+    그래서 한국 낮에는 한국 종목만, 한국 밤에는 미국 종목만 자주 갱신됩니다.
+    닫힌 시장의 종가는 **아무리 기다려도 안 바뀌므로** 다시 받는 게 순수한
+    낭비이고, 무료 소스에 막힐 위험만 키웁니다.
 
     ⚠ 캐시가 **비어 있으면** 이 값과 상관없이 한 번은 받아옵니다. 그래야
       새벽에 들어온 사람에게 자산이 통째로 "데이터 없음" 이 되지 않습니다.
     """
-    at = at or config.now_local()
-    # 짧은 주기(30분)는 **사람이 보는 시간 + 그 시장이 열려 있을 때**만입니다.
-    if is_quiet_hour(at) or not market_is_open(market, at):
-        return config.CACHE_TTL_LATEST_PRICE_CLOSED_SECONDS
-    return config.CACHE_TTL_LATEST_PRICE_SECONDS
+    return (config.CACHE_TTL_LATEST_PRICE_SECONDS if market_is_open(market, at)
+            else config.CACHE_TTL_LATEST_PRICE_CLOSED_SECONDS)
 
 
 def _to_daily_index(idx) -> pd.DatetimeIndex:
