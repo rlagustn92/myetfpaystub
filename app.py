@@ -47,7 +47,7 @@ from components.ui import (
     skin_gallery,
     warn,
 )
-from data.providers import cache
+from data.providers import cache, callmeter
 from data.providers.issuer import base as issuer_base
 from models.portfolio import MARKET_KR, MARKET_US, Holding
 from services import (
@@ -1587,13 +1587,20 @@ with c2:
             n = cache.invalidate()
             st.success(f"저장해 둔 자료 {n}건을 비웠습니다. 다시 받아옵니다.")
             st.rerun()
-        used = issuer_base.calls_today()
-        note(f"오늘 운용사 자료 조회 {used}회 / 한도 {config.ISSUER_DAILY_CALL_BUDGET}회 "
+        # 밖에 몇 번 나갔는지 — **캐시에서 꺼내 쓴 건 안 셉니다.** 그래서 이
+        # 숫자가 곧 "캐시가 잘 듣고 있나" 입니다. 막히고 나서 아는 것보다
+        # 숫자를 보고 있는 편이 낫습니다.
+        note(f"오늘 조회 — 운용사 {issuer_base.calls_today()}회"
+             f"/{config.ISSUER_DAILY_CALL_BUDGET} · "
+             f"시세 {callmeter.used_today('price')}회 · "
+             f"환율 {callmeter.used_today('fx')}회"
+             f"/{config.PRICE_DAILY_CALL_BUDGET} "
              f"(서버가 다시 켜지면 0부터 셉니다)")
     else:
         note(f"시세와 분배금은 자동으로 새로 받아옵니다 "
              f"(가격 {config.CACHE_TTL_LATEST_PRICE_SECONDS // 60}분 · "
-             f"분배금 {config.CACHE_TTL_DISTRIBUTION_SECONDS // 3600}시간 주기).")
+             f"분배금 {config.CACHE_TTL_DISTRIBUTION_SECONDS // 3600}시간 주기). "
+             f"장이 닫혀 있거나 밤이면 더 길게 둡니다.")
 
 # =====================================================================
 # 11. 브라우저 저장소에 쓰기 — ⚠ 반드시 맨 아래

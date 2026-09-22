@@ -17,7 +17,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 import config
-from data.providers import cache
+from data.providers import cache, callmeter
 from data.providers.base import DataUnavailable, FxQuote
 
 try:
@@ -40,6 +40,9 @@ def _daily_index(idx) -> pd.DatetimeIndex:
 def _yf_history(start: date, end: date) -> pd.Series:
     if yf is None:
         raise DataUnavailable("yfinance 를 사용할 수 없습니다.")
+    # ⚠ **부르기 직전에** 셉니다. 위 guard 앞에서 세면 아예 나가지도 않은
+    #   호출이 숫자에 잡혀서, 눈금을 믿을 수 없게 됩니다.
+    callmeter.spend("fx")
     raw = yf.Ticker(config.FX_PAIR_USDKRW).history(
         start=start.isoformat(), end=(end + timedelta(days=1)).isoformat(), auto_adjust=False
     )
@@ -54,6 +57,7 @@ def _yf_history(start: date, end: date) -> pd.Series:
 def _fdr_history(start: date, end: date) -> pd.Series:
     if fdr is None:
         raise DataUnavailable("FinanceDataReader 를 사용할 수 없습니다.")
+    callmeter.spend("fx")
     raw = fdr.DataReader("USD/KRW", start.isoformat(), end.isoformat())
     if raw is None or raw.empty or "Close" not in raw.columns:
         raise DataUnavailable("USD/KRW 환율(FDR)을 가져오지 못했습니다.")

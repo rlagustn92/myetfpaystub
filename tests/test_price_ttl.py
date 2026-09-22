@@ -58,10 +58,33 @@ def test_us_friday_night_runs_into_saturday_dawn():
 
 def test_ttl_is_long_while_the_market_is_shut():
     """닫혀 있으면 값이 안 바뀝니다. 다시 받을 이유가 없습니다."""
-    assert PP.latest_price_ttl(MARKET_KR, at(2026, 9, 22, 10)) == OPEN
+    assert PP.latest_price_ttl(MARKET_KR, at(2026, 9, 22, 10)) == OPEN     # 화 장중
+    assert PP.latest_price_ttl(MARKET_KR, at(2026, 9, 22, 16)) == SHUT     # 마감 후
     assert PP.latest_price_ttl(MARKET_KR, at(2026, 9, 26, 10)) == SHUT     # 토
-    assert PP.latest_price_ttl(MARKET_US, at(2026, 9, 23, 3)) == OPEN
+
+
+def test_quiet_hours_win_even_if_a_market_is_open():
+    """밤 8시~아침 8시에는 **볼 사람이 없습니다.** 그 시간에 30분마다 다시
+    받아봐야 무료 소스에 막힐 위험만 큽니다(사용자 결정).
+
+    ⚠ 그 결과 **미국 종목은 사실상 항상 긴 주기**입니다. 미국장이 한국 시간
+      22:00~06:30 이라 조용한 시간에 통째로 들어옵니다. 대신 한국 낮에는
+      미국장이 닫혀 있어 종가가 안 바뀌므로 잃는 게 없습니다.
+    """
+    assert PP.is_quiet_hour(at(2026, 9, 23, 3)) is True
+    assert PP.is_quiet_hour(at(2026, 9, 23, 21)) is True
+    assert PP.is_quiet_hour(at(2026, 9, 23, 12)) is False
+
+    assert PP.market_is_open(MARKET_US, at(2026, 9, 23, 3)) is True    # 열려 있어도
+    assert PP.latest_price_ttl(MARKET_US, at(2026, 9, 23, 3)) == SHUT  # 길게 둡니다
     assert PP.latest_price_ttl(MARKET_US, at(2026, 9, 23, 14)) == SHUT
+
+
+def test_the_short_ttl_only_happens_in_daytime_korean_hours():
+    """짧은 주기가 걸리는 시간이 실제로 있어야 이 기능이 의미가 있습니다."""
+    short = [h for h in range(24)
+             if PP.latest_price_ttl(MARKET_KR, at(2026, 9, 22, h)) == OPEN]
+    assert short == [9, 10, 11, 12, 13, 14, 15]
 
 
 def test_the_shut_ttl_is_actually_longer():

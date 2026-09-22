@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 # =====================================================================
 # 사용자에게 보이는 변화가 있으면 **아주 작은 수정이라도** 이 숫자를 올립니다.
 # 화면 헤더의 서비스 이름 옆에 그대로 표시됩니다.
-APP_VERSION: str = "0.28.0"
+APP_VERSION: str = "0.29.0"
 
 APP_NAME: str = "MY ETF 급여명세서"
 APP_TAGLINE: str = "여러 증권사에 흩어진 내 ETF와 매달 들어오는 돈을 한눈에"
@@ -256,6 +256,10 @@ ADMIN_QUERY_KEY: str = "admin"
 # 위한 안전장치입니다. 한도를 넘으면 그 소스는 폴백으로 내려가고, 화면에는
 # 과세표준이 '확인 불가' 로 나옵니다(숫자를 지어내지 않습니다).
 ISSUER_DAILY_CALL_BUDGET: int = 600
+# 시세·환율도 같은 눈금으로 셉니다(`data/providers/callmeter.py`). 정상적으로
+# 쓰면 하루 수십 번입니다 — 이 한도는 "코드 실수로 폭주" 를 끊는 안전장치이지
+# 평소에 닿을 숫자가 아닙니다.
+PRICE_DAILY_CALL_BUDGET: int = 600
 
 # =====================================================================
 # 방문자 카운터 (TODAY / TOTAL)
