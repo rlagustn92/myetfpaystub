@@ -115,6 +115,7 @@ CSS = """
   .grid.c3 { grid-template-columns:repeat(3,1fr); }
   .grid.c4 { grid-template-columns:repeat(4,1fr); }
   .grid.c5 { grid-template-columns:repeat(5,1fr); }
+  .grid.c6 { grid-template-columns:repeat(6,1fr); }
 
   /* ---- 값 카드 — 테두리 없이 은은한 채움만 ---- */
   .kcard { background:var(--tint); border:none; border-radius:14px;
@@ -248,9 +249,19 @@ CSS = """
   @keyframes tap { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-2px)} }
 
   /* 고르는 칸을 감싸 눈에 띄게 (달력 아래 날짜 고르기 등) */
-  .pickbox { border:1px solid var(--naver); border-radius:14px;
-             background:#F3FAF5; padding:12px 14px 4px; margin-top:10px; }
-  .pickbox .pt { font-size:.82rem; font-weight:700; color:var(--naver); }
+  /* 날짜 고르는 상자. **안내·고르는 칸·결과가 한 테두리 안**에 있어야
+     칸을 알아봅니다 — 예전에는 안내만 상자에 있고 칸은 밖에 떠 있어서
+     달력 숫자를 누르고 있었다는 이야기를 들었습니다.
+     ⚠ 위젯은 우리 HTML 로 감쌀 수 없어서, Streamlit 컨테이너에 key 를 주고
+       (`st.container(border=True, key="calpick")`) 그 클래스에 색만 입힙니다.
+       key 를 바꾸면 여기 선택자도 같이 바꿔야 합니다. */
+  .st-key-calpick { border-color:var(--naver) !important;
+                    background:#F3FAF5; border-radius:14px; }
+  .st-key-calpick .pt { font-size:.82rem; font-weight:700; color:var(--naver);
+                        margin-bottom:2px; }
+  /* 고르는 칸 자체도 흰 바탕 + 초록 테두리로 "여기를 눌러라" 를 말합니다. */
+  .st-key-calpick [data-baseweb="select"] > div { border-color:var(--naver);
+                                                  background:#fff; }
 
   /* ---- 큰 날짜 (월별 급여명세서) ---- */
   .bigdate { display:flex; align-items:baseline; gap:10px; }
@@ -293,13 +304,14 @@ CSS = """
      새 칸수를 쓸 때는 위의 정의와 아래 접기 규칙에 **둘 다** 넣어야 합니다. */
   @media (max-width: 1000px) {
     .grid.c5 { grid-template-columns:repeat(3,1fr); }
+    .grid.c6 { grid-template-columns:repeat(3,1fr); }
   }
   @media (max-width: 720px) {
-    .grid.c3, .grid.c4, .grid.c5 { grid-template-columns:repeat(2,1fr); }
+    .grid.c3, .grid.c4, .grid.c5, .grid.c6 { grid-template-columns:repeat(2,1fr); }
   }
   @media (max-width: 460px) {
     .panel { padding:16px 15px; border-radius:15px; }
-    .grid.c2, .grid.c3, .grid.c4, .grid.c5 { grid-template-columns:1fr; }
+    .grid.c2, .grid.c3, .grid.c4, .grid.c5, .grid.c6 { grid-template-columns:1fr; }
     .paycard .v { font-size:2rem; }
     .kcard .v { font-size:1.3rem; }
   }

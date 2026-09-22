@@ -165,6 +165,19 @@ class TickerGroup:
         return None
 
     @property
+    def price_as_of(self):
+        """지금 쓰고 있는 가격이 **언제 것인지**. 모르면 None.
+
+        무료 소스는 일별 종가를 줍니다. 장중이면 그날의 진행 중인 값이고
+        장이 끝나면 종가입니다 — 어느 쪽이든 **실시간 호가가 아닙니다.**
+        그래서 화면에 기준일을 같이 적습니다.
+        """
+        for r in self.rows:
+            if r.quote is not None:
+                return r.quote.as_of
+        return None
+
+    @property
     def avg_price(self) -> float | None:
         """가중평균 매입가격. 수량이 0이면 None."""
         qty = self.total_shares

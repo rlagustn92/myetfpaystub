@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import io
 import os
 
 import config
@@ -520,3 +521,21 @@ def test_the_paycard_shows_both_dividend_rates(offline, with_dividends):
     assert "class='vb'" in text                 # 금액 옆 알약이 붙었는가
     assert "원금의" in text                     # 한 달치 라벨
     assert config.YOC_LABEL in text             # 연 기준 라벨 (기간이 적혀 있음)
+
+
+def test_container_keys_have_matching_css():
+    """위젯은 우리 HTML 로 감쌀 수 없어서 `st.container(key=...)` 에 색을
+    입힙니다. **key 와 CSS 선택자가 문자열로만 묶여 있어서** 한쪽만 고치면
+    에러 없이 상자만 조용히 사라집니다. 눈으로 볼 때까지 모릅니다.
+    """
+    import re
+
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    app_src = io.open(APP, encoding="utf-8").read()
+    css = io.open(os.path.join(here, "components", "ui.py"),
+                  encoding="utf-8").read()
+
+    keys = re.findall(r'st\.container\([^)]*key="([^"]+)"', app_src)
+    assert keys, "테두리 상자가 하나는 있어야 이 테스트가 뭔가를 지킵니다"
+    for key in keys:
+        assert f".st-key-{key}" in css, f"{key} 에 해당하는 CSS 가 없습니다"

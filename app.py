@@ -325,7 +325,10 @@ def render_home() -> None:
                      F.won(this_month.withholding_krw)))
         subs.append((config.AFTER_TAX_LABEL, F.won(this_month.after_tax_krw)))
     if this_month.has_tax_deferred:
-        subs.append((config.TAX_DEFERRED_LABEL, F.won(this_month.tax_deferred_krw)))
+        # ⚠ 라벨이 "세금 안 뗌" 이면 이 금액이 **세금처럼** 보입니다(사용자 지적).
+        #   세금이 아니라 ISA·연금 계좌로 세금 없이 들어오는 배당금입니다.
+        subs.append((config.TAX_DEFERRED_AMOUNT_LABEL,
+                     F.won(this_month.tax_deferred_krw)))
 
     # 배당률. **두 가지를 같이 보여줍니다** — 기준이 다르므로 라벨로 갈라 적습니다.
     #  · 금액 옆 알약 = 이번 달 그 금액이 원금의 몇 % 인가 (한 달치)
@@ -678,8 +681,8 @@ def render_payslip() -> None:
                                     config.AFTER_TAX_LABEL, "세금 떼고 들어올 돈"))
         if total.has_tax_deferred:
             cards.append(kcard_html(F.won(total.tax_deferred_krw),
-                                    config.TAX_DEFERRED_LABEL,
-                                    "ISA·연금저축은 그대로 입금"))
+                                    config.TAX_DEFERRED_AMOUNT_LABEL,
+                                    config.TAX_DEFERRED_AMOUNT_SUB))
         st.markdown(grid_html(cards, cols=min(4, max(2, len(cards)))),
                     unsafe_allow_html=True)
 
@@ -712,6 +715,14 @@ def render_payslip() -> None:
                 for r in total.rows
             ],
             width="stretch", hide_index=True,
+            # 한눈에 들어오게 **짧은 칸은 좁힙니다.** 특히 🟡/🟢 한 글자짜리
+            # 칸이 기본 폭을 다 먹고 있어서 표가 옆으로 밀렸습니다(사용자 지적).
+            column_config={
+                "": st.column_config.TextColumn("", width=46),
+                "날짜": st.column_config.TextColumn(width=64),
+                "수량": st.column_config.TextColumn(width=72),
+                "지급기준일": st.column_config.TextColumn(width=96),
+            },
         )
         lines = [f"🟡 예상 · 🟢 확인 · {config.WITHHOLDING_LABEL}은 "
                  f"{config.WITHHOLDING_RATE_LABEL} 기준 예상값입니다"]
@@ -809,24 +820,29 @@ def render_calendar(year: int, month: int, total: CF.PeriodTotal) -> None:
     if by_day:
         # ⚠ 이 칸을 못 알아보고 달력 숫자를 누르고 있었다는 이야기를 들었습니다.
         #    누를 수 있는 것은 눌러 보이게 생겨야 합니다.
-        st.markdown(
-            "<div class='pickbox'><div class='pt'>👇 날짜를 고르면 그날 들어오는 "
-            "종목이 나옵니다</div></div>",
-            unsafe_allow_html=True,
-        )
-        picked = st.selectbox(
-            "날짜 고르기",
-            sorted(by_day.keys()),
-            format_func=lambda d: f"{d.month}월 {d.day}일 — {F.won(by_day[d].amount_krw)}",
-            key=f"cal_{year}_{month}",
-        )
-        for r in by_day[picked].rows:
-            listrow(r.name,
-                    f"{r.holding.where()} · {F.shares(r.holding.shares)}"
-                    + (f" · {r.record_note}" if r.record_note else ""),
-                    F.won(r.amount_krw),
-                    _row_tax_text(r),
-                    chip="예상" if r.is_estimated else "")
+        # ⚠ 안내 문구와 고르는 칸이 **따로 놀면** 칸을 못 알아봅니다. 예전에는
+        #   안내만 테두리 상자에 있고 칸은 그 밖에 떠 있어서, 달력 숫자를
+        #   누르고 있었다는 이야기를 들었습니다. 지금은 안내·칸·결과가
+        #   한 테두리 안에 들어갑니다(`st.container(border=True)`).
+        #   ⚠ 위젯은 우리 HTML 로 감쌀 수 없습니다 — 그래서 컨테이너에 key 를
+        #     주고 `.st-key-calpick` 으로 색만 입힙니다.
+        with st.container(border=True, key="calpick"):
+            st.markdown("<div class='pt'>👇 날짜를 고르면 그날 들어오는 "
+                        "종목이 나옵니다</div>", unsafe_allow_html=True)
+            picked = st.selectbox(
+                "날짜 고르기",
+                sorted(by_day.keys()),
+                format_func=lambda d: (f"{d.month}월 {d.day}일 — "
+                                       f"{F.won(by_day[d].amount_krw)}"),
+                key=f"cal_{year}_{month}",
+            )
+            for r in by_day[picked].rows:
+                listrow(r.name,
+                        f"{r.holding.where()} · {F.shares(r.holding.shares)}"
+                        + (f" · {r.record_note}" if r.record_note else ""),
+                        F.won(r.amount_krw),
+                        _row_tax_text(r),
+                        chip="예상" if r.is_estimated else "")
 
 
 # =====================================================================
@@ -863,8 +879,13 @@ def render_detail() -> None:
     st.markdown(
         grid_html([
             kcard_html(F.shares(g.total_shares), "보유 수량", f"{len(g.rows)}개 계좌"),
+            kcard_html(F.native_amt(g.price, g.currency), "현재가",
+                       # ⚠ "지금" 이라고만 적으면 실시간 호가로 읽힙니다.
+                       #   무료 소스가 주는 **일별 종가**라 기준일을 같이 적습니다.
+                       f"{F.ymd(g.price_as_of)} 기준" if g.price_as_of
+                       else "기준일 모름"),
             kcard_html(F.native_amt(g.avg_price, g.currency), "평균 매입가",
-                       f"지금 {F.native_amt(g.price, g.currency)}"),
+                       "내가 산 값"),
             kcard_html(F.won(c), "투자 원금", "수량 × 평균 매입가"),
             kcard_html(F.won(v), "평가액"),
             # 손익은 따로 한 칸을 줘서 눈에 확 들어오게 합니다.
@@ -873,9 +894,10 @@ def render_detail() -> None:
                        F.pct_signed(rate) if rate is not None else "",
                        tone="up" if (profit or 0) > 0 else
                             ("down" if (profit or 0) < 0 else "")),
-        ], cols=5),
+        ], cols=6),
         unsafe_allow_html=True,
     )
+    note(f"※ {config.PRICE_BASIS_HELP}")
 
     st.write("")
     section("계좌별 보유 현황")
