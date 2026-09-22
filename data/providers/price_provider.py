@@ -17,7 +17,7 @@ data/providers/price_provider.py  --  현재가 / 가격 히스토리 (미국 + 
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, time as _time, timedelta
 
 import pandas as pd
 
@@ -46,6 +46,44 @@ except Exception as _e:  # pragma: no cover
     _FDR_ERROR = _e
 else:
     _FDR_ERROR = None
+
+
+# =====================================================================
+# 장이 열려 있는가 — 최신가를 얼마나 오래 우려먹을지 정합니다
+# =====================================================================
+# 전부 **한국시간(KST)** 기준입니다.
+_KR_OPEN, _KR_CLOSE = _time(9, 0), _time(15, 40)
+# 미국장은 한국 시간으로 밤에 열려 다음 날 새벽에 닫힙니다. 서머타임에 따라
+# 22:30~05:00 또는 23:30~06:00 이라 **양쪽을 다 덮는 넉넉한 창**으로 잡습니다.
+# 좁게 잡아 장중을 놓치면 가격이 멈춘 것처럼 보이지만, 넓게 잡으면 호출이
+# 조금 더 나갈 뿐입니다 — 틀릴 거면 넓은 쪽으로 틀리는 게 낫습니다.
+_US_OPEN, _US_CLOSE = _time(22, 0), _time(6, 30)
+
+
+def market_is_open(market: str, at: datetime | None = None) -> bool:
+    """지금 그 시장이 열려 있는가 (한국시간 기준).
+
+    ⚠ **공휴일은 모릅니다.** 휴장일에 열려 있다고 판단하면 호출이 몇 번 더
+      나갈 뿐 값이 틀리지는 않습니다.
+    """
+    at = at or config.now_local()
+    weekday, clock = at.weekday(), at.time()          # 월요일 = 0
+    if market == MARKET_US:
+        # 월~금 밤에 열려서 다음 날 새벽에 닫힙니다 → 새벽 쪽은 화~토입니다.
+        if weekday <= 4 and clock >= _US_OPEN:
+            return True
+        return 1 <= weekday <= 5 and clock <= _US_CLOSE
+    return weekday <= 4 and _KR_OPEN <= clock <= _KR_CLOSE
+
+
+def latest_price_ttl(market: str, at: datetime | None = None) -> int:
+    """최신가를 얼마나 오래 쓸 것인가(초). 장중 30분 / 장 마감 6시간.
+
+    밤·주말에는 종가가 **안 바뀝니다.** 그때 다시 받는 건 순수한 낭비이고,
+    무료 소스에 막힐 위험만 키웁니다. 하루의 절반 이상이 여기 해당합니다.
+    """
+    return (config.CACHE_TTL_LATEST_PRICE_SECONDS if market_is_open(market, at)
+            else config.CACHE_TTL_LATEST_PRICE_CLOSED_SECONDS)
 
 
 def _to_daily_index(idx) -> pd.DatetimeIndex:
@@ -96,7 +134,10 @@ class USPriceProvider(PriceProvider):
             return PriceQuote(ticker=ticker, price=float(df.loc[last, HISTORY_CLOSE_COL]),
                               currency="USD", as_of=last.date(), source=self.name)
 
-        return cache.get_or_set(key, config.CACHE_TTL_LATEST_PRICE_SECONDS, _load)
+        # ⚠ 유효기간을 **읽을 때마다 다시 정합니다**(`ttl_of`). 저장할 때
+        #   고정하면 장 마감 직전에 받은 값이 밤새 30분마다 다시 받아집니다.
+        return cache.get_or_set(key, config.CACHE_TTL_LATEST_PRICE_SECONDS, _load,
+                                ttl_of=lambda _q: latest_price_ttl(MARKET_US))
 
 
 # =====================================================================
@@ -136,7 +177,8 @@ class KRPriceProvider(PriceProvider):
             return PriceQuote(ticker=str(ticker), price=float(df.loc[last, HISTORY_CLOSE_COL]),
                               currency="KRW", as_of=last.date(), source=self.name)
 
-        return cache.get_or_set(key, config.CACHE_TTL_LATEST_PRICE_SECONDS, _load)
+        return cache.get_or_set(key, config.CACHE_TTL_LATEST_PRICE_SECONDS, _load,
+                                ttl_of=lambda _q: latest_price_ttl(MARKET_KR))
 
 
 # =====================================================================
